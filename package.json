@@ -1,0 +1,35 @@
+{
+  "name": "chatbot-platform",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @chatbot/platform-api",
+    "dev:dashboard": "npm run dev -w @chatbot/dashboard",
+    "dev": "npx concurrently -k \"npm run dev:api\" \"npm run dev:dashboard\"",
+    "build": "npm run build -w @chatbot/domain && npm run build -w @chatbot/runtime && npm run build -w @chatbot/platform-api && npm run build -w @chatbot/widget",
+    "typecheck": "npm run typecheck -w @chatbot/domain && npm run typecheck -w @chatbot/runtime && npm run typecheck -w @chatbot/platform-api && npm run typecheck -w @chatbot/dashboard && npm run typecheck -w @chatbot/ops-dashboard && npm run typecheck -w @chatbot/widget",
+    "test": "npm run test -w @chatbot/domain && npm run test -w @chatbot/platform-api",
+    "desk:env:pull": "bash scripts/sync-env-from-flatbase.sh",
+    "desk:secrets:test": "bash infra/cloudflare/sync-secrets.sh test",
+    "desk:secrets:prod": "bash infra/cloudflare/sync-secrets.sh production",
+    "desk:deploy:test": "bash infra/cloudflare/deploy-test.sh",
+    "desk:deploy:prod": "bash infra/cloudflare/deploy-prod.sh",
+    "desk:ship:test": "npm run desk:secrets:test && npm run desk:deploy:test",
+    "desk:ship:prod": "npm run desk:secrets:prod && npm run desk:deploy:prod",
+    "desk:smoke:test": "bash scripts/smoke-test-desk.sh test",
+    "desk:smoke:prod": "bash scripts/smoke-test-desk.sh production",
+    "cf:test:deploy": "npm run desk:deploy:test",
+    "cf:prod:deploy": "npm run desk:deploy:prod",
+    "cf:secrets:sync:test": "npm run desk:secrets:test",
+    "cf:secrets:sync:prod": "npm run desk:secrets:prod",
+    "env:sync-flatbase": "npm run desk:env:pull"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

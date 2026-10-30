@@ -1,0 +1,29 @@
+{
+  "name": "@chatbot/platform-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config ../../infra/cloudflare/wrangler.toml --persist-to ../../.wrangler",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chatbot/chat-ui": "*",
+    "@chatbot/domain": "*",
+    "@chatbot/runtime": "*",
+    "@hono/zod-openapi": "^0.19.6",
+    "hono": "^4.12.32",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.71",
+    "@cloudflare/workers-types": "^4.20250428.0",
+    "@types/node": "^20.19.43",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.6",
+    "wrangler": "^4.123.0"
+  }
+}

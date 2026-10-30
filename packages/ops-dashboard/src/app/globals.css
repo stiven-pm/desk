@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --ops-ink: oklch(0.2 0.02 55);
+  --ops-panel: oklch(0.16 0.025 55);
+  --ops-surface: oklch(0.98 0.008 95);
+  --ops-border: oklch(0.88 0.015 85);
+  --ops-muted: oklch(0.5 0.02 75);
+  --ops-accent: oklch(0.72 0.12 85);
+  --ops-radius: 8px;
+}
+
+body {
+  background: var(--ops-surface);
+  color: var(--ops-ink);
+  font-family: var(--font-ops), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid oklch(0.55 0.08 200);
+  outline-offset: 2px;
+}

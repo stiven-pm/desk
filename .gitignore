@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+dist/
+.open-next/
+.env
+.env.*
+!.env.*.example
+.dev.vars
+infra/cloudflare/wrangler.toml
+packages/dashboard/wrangler.toml
+packages/ops-dashboard/wrangler.toml
+*.local
+.DS_Store
+coverage/

@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/onboarding/layout,_N_T_/onboarding/plan/layout,_N_T_/onboarding/plan/page,_N_T_/onboarding/plan"
+  },
+  "routeCache": {
+    "key": "/route-cache/APP_PAGE/8c98a74134a7abb98beaf2c4c5993c383fd2b44456be1f382fc41730b565b717/$/onboarding/plan",
+    "owner": {
+      "kind": "APP_PAGE",
+      "sourceRoute": "/onboarding/plan/page"
+    },
+    "isFallback": false
+  }
+}

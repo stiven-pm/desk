@@ -1,0 +1,17 @@
+name = "desk-ops-dashboard"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+main = ".open-next/worker.js"
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+[env.test]
+name = "desk-ops-dashboard-test"
+workers_dev = true
+
+[[env.test.routes]]
+pattern = "{{OPS_APP_HOST_TEST}}"
+custom_domain = true
+
+[[routes]]
+pattern = "{{OPS_APP_HOST_PROD}}"
+custom_domain = true

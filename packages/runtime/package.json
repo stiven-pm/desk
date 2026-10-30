@@ -1,0 +1,36 @@
+{
+  "name": "@chatbot/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./llm-client": "./src/llm-client.ts",
+    "./integrations/openapi": "./src/integrations/openapi.ts",
+    "./integrations/types": "./src/integrations/types.ts",
+    "./integrations/siigo": "./src/integrations/siigo.ts",
+    "./setup-agent/run-setup-agent": "./src/setup-agent/run-setup-agent.ts",
+    "./skills/load-bot-skills": "./src/skills/load-bot-skills.ts",
+    "./integrations/mcp-catalog": "./src/integrations/mcp-catalog.ts",
+    "./integrations/integration-runtime": "./src/integrations/integration-runtime.ts",
+    "./integrations/integration-http-engine": "./src/integrations/integration-http-engine.ts",
+    "./harness/flags": "./src/harness/flags.ts",
+    "./harness/setup-output": "./src/harness/setup-output.ts",
+    "./commerce/stock-reservations": "./src/commerce/stock-reservations.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chatbot/chat-ui": "*",
+    "@chatbot/domain": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250428.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.6"
+  }
+}

@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+:root {
+  /* Desk brand — monocromo */
+  --desk-black: #0a0a0a;
+  --desk-surface: #141414;
+  --desk-white: #fafafa;
+  --desk-muted: #a3a3a3;
+  --desk-border: #262626;
+  --desk-paper: #f5f5f4;
+  --desk-ink: #171717;
+  --desk-live: #22c55e;
+
+  --background: var(--desk-paper);
+  --foreground: var(--desk-ink);
+  --card: #ffffff;
+  --muted: #737373;
+  --muted-bg: #ebebea;
+  --primary: var(--desk-ink);
+  --primary-foreground: var(--desk-white);
+  --accent: var(--desk-ink);
+  --accent-foreground: var(--desk-white);
+  --border: #e5e5e5;
+  --ring: #737373;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
+@theme inline {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), Georgia, "Times New Roman", serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: #d4d4d4;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.desk-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+.native-inventory-gradient-label {
+  background-image: linear-gradient(
+    to right,
+    rgb(5 150 105),
+    rgb(217 119 6),
+    rgb(225 29 72)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.native-inventory-gradient-label::selection {
+  -webkit-text-fill-color: rgb(6 78 59);
+  color: rgb(6 78 59);
+  background-color: rgb(167 243 208);
+}

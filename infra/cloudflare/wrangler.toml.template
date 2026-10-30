@@ -1,0 +1,217 @@
+name = "desk-api"
+main = "../../packages/platform-api/src/worker.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+account_id = "{{CF_ACCOUNT_ID}}"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
+
+[observability.issue_detection]
+enabled = false
+
+[vars]
+CHATBOT_ENV = "{{CHATBOT_ENV_PROD}}"
+APP_URL = "{{APP_URL_PROD}}"
+OPS_APP_URL = "{{OPS_APP_URL_PROD}}"
+PLATFORM_API_URL = "{{PLATFORM_API_URL_PROD}}"
+SIGNUPS_OPEN = "{{SIGNUPS_OPEN_PROD}}"
+OPS_BOOTSTRAP_ADMIN_EMAILS = "{{OPS_BOOTSTRAP_ADMIN_EMAILS_PROD}}"
+CREEM_API_BASE_URL = "{{CREEM_API_BASE_URL_PROD}}"
+CREEM_PRODUCT_STARTER = "{{CREEM_PRODUCT_STARTER_PROD}}"
+CREEM_PRODUCT_GROWTH = "{{CREEM_PRODUCT_GROWTH_PROD}}"
+CREEM_PRODUCT_BUSINESS = "{{CREEM_PRODUCT_BUSINESS_PROD}}"
+CREEM_PRODUCT_CREDITS_25 = "{{CREEM_PRODUCT_CREDITS_25_PROD}}"
+CREEM_PRODUCT_CREDITS_50 = "{{CREEM_PRODUCT_CREDITS_50_PROD}}"
+CREEM_PRODUCT_CREDITS_100 = "{{CREEM_PRODUCT_CREDITS_100_PROD}}"
+WORKERS_AI_CHAT_MODEL = "{{WORKERS_AI_CHAT_MODEL_PROD}}"
+WORKERS_AI_EMBEDDING_MODEL = "{{WORKERS_AI_EMBEDDING_MODEL_PROD}}"
+LLM_REQUEST_TIMEOUT_MS = "{{LLM_REQUEST_TIMEOUT_MS_PROD}}"
+LLM_STREAM_ENABLED = "{{LLM_STREAM_ENABLED_PROD}}"
+EMBEDDING_DIMENSIONS = "{{EMBEDDING_DIMENSIONS_PROD}}"
+DESK_FROM_EMAIL = "{{DESK_FROM_EMAIL_PROD}}"
+CF_ACCOUNT_ID = "{{CF_ACCOUNT_ID}}"
+CF_ZONE_ID = "{{CF_ZONE_ID_PROD}}"
+R2_STORAGE_ENDPOINT = "{{R2_STORAGE_ENDPOINT_PROD}}"
+GOOGLE_OAUTH_CLIENT_ID = "{{GOOGLE_OAUTH_CLIENT_ID_PROD}}"
+HUBSPOT_OAUTH_CLIENT_ID = "{{HUBSPOT_OAUTH_CLIENT_ID_PROD}}"
+SHOPIFY_OAUTH_CLIENT_ID = "{{SHOPIFY_OAUTH_CLIENT_ID_PROD}}"
+META_APP_ID = "{{META_APP_ID_PROD}}"
+WHATSAPP_EMBEDDED_CONFIG_ID = "{{WHATSAPP_EMBEDDED_CONFIG_ID_PROD}}"
+META_GRAPH_VERSION = "{{META_GRAPH_VERSION_PROD}}"
+LOGIN_OTP_BYPASS_EMAILS = "{{LOGIN_OTP_BYPASS_EMAILS_PROD}}"
+TURNSTILE_SITE_KEY = "{{TURNSTILE_SITE_KEY_PROD}}"
+
+[assets]
+directory = "../../packages/platform-api/assets"
+binding = "ASSETS"
+
+[ai]
+binding = "AI"
+
+[[send_email]]
+name = "EMAIL"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "desk-control"
+database_id = "{{D1_DATABASE_ID_PROD}}"
+migrations_dir = "d1"
+
+[[kv_namespaces]]
+binding = "TENANT_CACHE"
+id = "{{KV_TENANT_CACHE_ID_PROD}}"
+preview_id = "{{KV_TENANT_CACHE_PREVIEW_ID_PROD}}"
+
+[[r2_buckets]]
+binding = "SOURCES"
+bucket_name = "desk-sources"
+
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "desk-ingest"
+
+[[queues.consumers]]
+queue = "desk-ingest"
+max_batch_size = 5
+max_batch_timeout = 30
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "desk-rag"
+
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "desk_events"
+
+[durable_objects]
+bindings = [{ name = "CONVERSATION", class_name = "ConversationDO" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ConversationDO"]
+
+[triggers]
+crons = ["0 * * * *", "0 3 * * *"]
+
+[[routes]]
+pattern = "{{API_ROUTE_HOST_PROD}}"
+custom_domain = true
+
+[env.test]
+name = "desk-api-test"
+workers_dev = true
+
+[env.test.observability]
+enabled = true
+
+[env.test.observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[env.test.observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
+
+[env.test.observability.issue_detection]
+enabled = false
+
+[env.test.vars]
+CHATBOT_ENV = "{{CHATBOT_ENV_TEST}}"
+APP_URL = "{{APP_URL_TEST}}"
+OPS_APP_URL = "{{OPS_APP_URL_TEST}}"
+PLATFORM_API_URL = "{{PLATFORM_API_URL_TEST}}"
+SIGNUPS_OPEN = "{{SIGNUPS_OPEN_TEST}}"
+OPS_BOOTSTRAP_ADMIN_EMAILS = "{{OPS_BOOTSTRAP_ADMIN_EMAILS_TEST}}"
+CREEM_API_BASE_URL = "{{CREEM_API_BASE_URL_TEST}}"
+CREEM_PRODUCT_STARTER = "{{CREEM_PRODUCT_STARTER_TEST}}"
+CREEM_PRODUCT_GROWTH = "{{CREEM_PRODUCT_GROWTH_TEST}}"
+CREEM_PRODUCT_BUSINESS = "{{CREEM_PRODUCT_BUSINESS_TEST}}"
+CREEM_PRODUCT_CREDITS_25 = "{{CREEM_PRODUCT_CREDITS_25_TEST}}"
+CREEM_PRODUCT_CREDITS_50 = "{{CREEM_PRODUCT_CREDITS_50_TEST}}"
+CREEM_PRODUCT_CREDITS_100 = "{{CREEM_PRODUCT_CREDITS_100_TEST}}"
+WORKERS_AI_CHAT_MODEL = "{{WORKERS_AI_CHAT_MODEL_TEST}}"
+WORKERS_AI_EMBEDDING_MODEL = "{{WORKERS_AI_EMBEDDING_MODEL_TEST}}"
+LLM_REQUEST_TIMEOUT_MS = "{{LLM_REQUEST_TIMEOUT_MS_TEST}}"
+LLM_STREAM_ENABLED = "{{LLM_STREAM_ENABLED_TEST}}"
+EMBEDDING_DIMENSIONS = "{{EMBEDDING_DIMENSIONS_TEST}}"
+DESK_FROM_EMAIL = "{{DESK_FROM_EMAIL_TEST}}"
+CF_ACCOUNT_ID = "{{CF_ACCOUNT_ID}}"
+CF_ZONE_ID = "{{CF_ZONE_ID_TEST}}"
+R2_STORAGE_ENDPOINT = "{{R2_STORAGE_ENDPOINT_TEST}}"
+GOOGLE_OAUTH_CLIENT_ID = "{{GOOGLE_OAUTH_CLIENT_ID_TEST}}"
+HUBSPOT_OAUTH_CLIENT_ID = "{{HUBSPOT_OAUTH_CLIENT_ID_TEST}}"
+SHOPIFY_OAUTH_CLIENT_ID = "{{SHOPIFY_OAUTH_CLIENT_ID_TEST}}"
+META_APP_ID = "{{META_APP_ID_TEST}}"
+WHATSAPP_EMBEDDED_CONFIG_ID = "{{WHATSAPP_EMBEDDED_CONFIG_ID_TEST}}"
+META_GRAPH_VERSION = "{{META_GRAPH_VERSION_TEST}}"
+LOGIN_OTP_BYPASS_EMAILS = "{{LOGIN_OTP_BYPASS_EMAILS_TEST}}"
+TURNSTILE_SITE_KEY = "{{TURNSTILE_SITE_KEY_TEST}}"
+
+[env.test.assets]
+directory = "../../packages/platform-api/assets"
+binding = "ASSETS"
+
+[env.test.ai]
+binding = "AI"
+
+[[env.test.send_email]]
+name = "EMAIL"
+
+[[env.test.d1_databases]]
+binding = "DB"
+database_name = "desk-control-test"
+database_id = "{{D1_DATABASE_ID_TEST}}"
+migrations_dir = "d1"
+
+[[env.test.kv_namespaces]]
+binding = "TENANT_CACHE"
+id = "{{KV_TENANT_CACHE_ID_TEST}}"
+preview_id = "{{KV_TENANT_CACHE_PREVIEW_ID_TEST}}"
+
+[[env.test.r2_buckets]]
+binding = "SOURCES"
+bucket_name = "desk-sources-test"
+
+[[env.test.queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "desk-ingest-test"
+
+[[env.test.queues.consumers]]
+queue = "desk-ingest-test"
+max_batch_size = 5
+max_batch_timeout = 30
+
+[[env.test.vectorize]]
+binding = "VECTORIZE"
+index_name = "desk-rag-test"
+
+[[env.test.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "desk_events_test"
+
+[env.test.durable_objects]
+bindings = [{ name = "CONVERSATION", class_name = "ConversationDO" }]
+
+[[env.test.migrations]]
+tag = "v1"
+new_sqlite_classes = ["ConversationDO"]
+
+[[env.test.routes]]
+pattern = "{{API_ROUTE_HOST_TEST}}"
+custom_domain = true

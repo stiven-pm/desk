@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/legal/layout,_N_T_/legal/dmca/layout,_N_T_/legal/dmca/page,_N_T_/legal/dmca"
+  },
+  "routeCache": {
+    "key": "/route-cache/APP_PAGE/b47e52f39eb8ce2e708df12fda7d1addecf2afc41d34089824c82c4609dd1a95/$/legal/dmca",
+    "owner": {
+      "kind": "APP_PAGE",
+      "sourceRoute": "/legal/dmca/page"
+    },
+    "isFallback": false
+  }
+}
