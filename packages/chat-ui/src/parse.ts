@@ -22,6 +22,12 @@ function normalizeBlocks(payload: DeskUiPayload): DeskUiBlock[] {
   for (const b of payload.blocks ?? []) {
     if (b.type === "html" && b.html) {
       blocks.push({ type: "html", html: sanitizeDeskHtml(b.html, MAX_HTML_CHARS) });
+    } else if (b.type === "external_link" && b.href && b.label) {
+      const href = String(b.href).trim();
+      const label = String(b.label).trim().slice(0, 80);
+      if (href.startsWith("https://") && label) {
+        blocks.push({ type: "external_link", href, label });
+      }
     } else if (b.type === "host" && b.component) {
       blocks.push({
         type: "host",

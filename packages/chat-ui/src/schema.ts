@@ -97,6 +97,11 @@ export const deskUiBlockSchema = z.discriminatedUnion("type", [
     html: z.string().max(MAX_HTML_CHARS),
   }),
   z.object({
+    type: z.literal("external_link"),
+    href: httpsUrl,
+    label: z.string().min(1).max(80),
+  }),
+  z.object({
     type: z.literal("host"),
     component: z.string().min(1).max(64),
     props: z.record(z.unknown()).optional(),

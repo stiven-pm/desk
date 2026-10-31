@@ -8,7 +8,7 @@ import {
   type ParsedAssistantUi,
   type ProductItem,
 } from "@chatbot/chat-ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { resolvePublicApiUrl } from "@/lib/config";
 import {
   clearPublicVisitorSession,
@@ -69,6 +69,8 @@ function checkoutResultMessage(params: CheckoutReturnParams): string | null {
   return null;
 }
 
+type ChatMsg = { role: "user" | "assistant"; text: string; streaming?: boolean };
+
 function threadShowsPaymentForRef(messages: ChatMsg[], publicRef: string): boolean {
   const ref = publicRef.trim();
   if (!ref) return false;
@@ -80,7 +82,98 @@ function threadShowsPaymentForRef(messages: ChatMsg[], publicRef: string): boole
   );
 }
 
-type ChatMsg = { role: "user" | "assistant"; text: string };
+type PublicStreamDone = {
+  assistantText: string;
+  phase?: string;
+  checkoutUrl?: string;
+  commerceCode?: string;
+};
+
+async function readPublicMessageStream(
+  res: Response,
+  hooks: {
+    onStart?: () => void;
+    onDelta: (chunk: string) => void;
+  },
+): Promise<
+  | { ok: true; done: PublicStreamDone }
+  | { ok: false; error: string; phase?: string }
+> {
+  if (!res.body) {
+    return { ok: false, error: "stream_unavailable" };
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let done: PublicStreamDone | null = null;
+  while (true) {
+    const { value, done: streamDone } = await reader.read();
+    if (streamDone) break;
+    buf += dec.decode(value, { stream: true });
+    for (;;) {
+      const nl = buf.indexOf("\n");
+      if (nl < 0) break;
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      const ev = JSON.parse(line) as {
+        type: string;
+        text?: string;
+        assistantText?: string;
+        phase?: string;
+        checkoutUrl?: string;
+        commerceCode?: string;
+        error?: string;
+      };
+      if (ev.type === "start") hooks.onStart?.();
+      if (ev.type === "delta" && ev.text) hooks.onDelta(ev.text);
+      if (ev.type === "done" && ev.assistantText != null) {
+        done = {
+          assistantText: ev.assistantText,
+          phase: ev.phase,
+          checkoutUrl: ev.checkoutUrl,
+          commerceCode: ev.commerceCode,
+        };
+      }
+      if (ev.type === "error") {
+        return { ok: false, error: ev.error ?? "message_failed", phase: ev.phase };
+      }
+    }
+  }
+  if (!done) return { ok: false, error: "stream_incomplete" };
+  return { ok: true, done };
+}
+
+function appendStreamingAssistantDelta(
+  setMessages: Dispatch<SetStateAction<ChatMsg[]>>,
+  chunk: string,
+): void {
+  setMessages((m) => {
+    const copy = [...m];
+    const last = copy[copy.length - 1];
+    if (last?.role === "assistant" && last.streaming) {
+      copy[copy.length - 1] = { ...last, text: last.text + chunk };
+      return copy;
+    }
+    copy.push({ role: "assistant", text: chunk, streaming: true });
+    return copy;
+  });
+}
+
+function finalizeStreamingAssistant(
+  setMessages: Dispatch<SetStateAction<ChatMsg[]>>,
+  text: string,
+): void {
+  setMessages((m) => {
+    const copy = [...m];
+    const last = copy[copy.length - 1];
+    if (last?.role === "assistant" && last.streaming) {
+      copy[copy.length - 1] = { role: "assistant", text };
+      return copy;
+    }
+    return [...copy, { role: "assistant", text }];
+  });
+}
 
 const DESK_CHOICE_BTN =
   "rounded-full border border-[#d8dcde] px-3 py-1 text-xs hover:bg-[#f8f9f9]";
@@ -324,6 +417,18 @@ function DeskBlock({
         className="space-y-2 text-sm text-[#2f3941] [&_img]:mb-2 [&_img]:max-h-72 [&_img]:w-full [&_img]:rounded-lg [&_img]:bg-[#f8f9f9] [&_img]:object-contain [&_p+p]:mt-2"
         dangerouslySetInnerHTML={{ __html: safe }}
       />
+    );
+  }
+  if (block.type === "external_link") {
+    return (
+      <a
+        href={block.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={DESK_CHOICE_BTN}
+      >
+        {block.label}
+      </a>
     );
   }
   if (block.type === "cart") {
@@ -891,38 +996,75 @@ export function HostedPublicChat({
               "Content-Type": "application/json",
               "X-Api-Key": bootstrap.publishableKey,
             },
-        body: JSON.stringify({
-          text: trimmed,
-          ...(deskAction ? { deskAction } : {}),
-          ...linkedStoreBody(),
-          ...(turnstileToken ? { turnstileToken } : {}),
-        }),
+            body: JSON.stringify({
+              text: trimmed,
+              stream: true,
+              ...(deskAction ? { deskAction } : {}),
+              ...linkedStoreBody(),
+              ...(turnstileToken ? { turnstileToken } : {}),
+            }),
           },
         );
-        const data = (await res.json()) as {
-          text?: string;
-          assistantText?: string;
-          phase?: string;
-          error?: string;
-          checkoutUrl?: string;
-          code?: string;
-        };
-        if (!res.ok) {
-          const code = data.code ?? data.error ?? "message_failed";
-          if (code === "conversation_closed") {
-            startNewConversation();
-            return;
+
+        const ct = res.headers.get("content-type") ?? "";
+        let reply = "";
+        let phase: string | undefined;
+        let checkoutUrl: string | undefined;
+        let code: string | undefined;
+
+        if (res.ok && ct.includes("ndjson")) {
+          const stream = await readPublicMessageStream(res, {
+            onStart: () => {
+              setMessages((m) => {
+                const last = m[m.length - 1];
+                if (last?.role === "assistant" && last.streaming) return m;
+                return [...m, { role: "assistant", text: "", streaming: true }];
+              });
+            },
+            onDelta: (chunk) => appendStreamingAssistantDelta(setMessages, chunk),
+          });
+          if (!stream.ok) {
+            if (stream.error === "conversation_closed") {
+              startNewConversation();
+              return;
+            }
+            throw new Error(stream.error);
           }
-          throw new Error(code);
+          reply = stream.done.assistantText;
+          phase = stream.done.phase;
+          checkoutUrl = stream.done.checkoutUrl;
+          finalizeStreamingAssistant(setMessages, reply);
+        } else {
+          const data = (await res.json()) as {
+            text?: string;
+            assistantText?: string;
+            phase?: string;
+            error?: string;
+            checkoutUrl?: string;
+            code?: string;
+          };
+          if (!res.ok) {
+            code = data.code ?? data.error ?? "message_failed";
+            if (code === "conversation_closed") {
+              startNewConversation();
+              return;
+            }
+            throw new Error(code);
+          }
+          reply = data.text ?? data.assistantText ?? "…";
+          phase = data.phase;
+          checkoutUrl = data.checkoutUrl;
+          code = data.code;
+          setMessages((m) => [...m, { role: "assistant", text: reply }]);
         }
-        const reply = data.text ?? data.assistantText ?? "…";
-        if (data.checkoutUrl && !reply.includes("Ir a pagar")) {
+
+        if (checkoutUrl && !reply.includes("Ir a pagar")) {
           markCheckoutGatewayOpen(bootstrap.botId);
-          window.location.href = data.checkoutUrl;
+          window.location.href = checkoutUrl;
           return;
         }
         if (
-          data.code === "turnstile_required" &&
+          code === "turnstile_required" &&
           turnstileSiteKey &&
           !turnstileToken
         ) {
@@ -938,9 +1080,8 @@ export function HostedPublicChat({
           startNewConversation();
           return;
         }
-        setMessages((m) => [...m, { role: "assistant", text: reply }]);
         writeChatLastActiveMs(bootstrap.botId);
-        if (data.phase) setPhase(data.phase);
+        if (phase) setPhase(phase);
         if (storeConversationId && storeVisitorId) {
           onLinkedStoreUpdated?.();
         }

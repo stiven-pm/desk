@@ -333,9 +333,28 @@ export function registerPublicChatRoutes(app: Hono<AppEnv>): void {
           deskAction: parsed.data.deskAction,
           storeConversationId: parsed.data.storeConversationId,
           turnstileToken: parsed.data.turnstileToken,
+          stream: parsed.data.stream === true,
         }),
       }),
     );
+
+    if (parsed.data.stream && doRes.ok) {
+      const ct = doRes.headers.get("content-type") ?? "";
+      if (ct.includes("ndjson")) {
+        await touchConversationActivity(c.env.DB, conversationId, gate.bot.orgId);
+        void emitOrgWebhook(c.env, gate.bot.orgId, "conversation.message", {
+          conversationId,
+          botId: gate.bot.botId,
+          channel: "web",
+          role: "user",
+        });
+        return new Response(doRes.body, {
+          status: doRes.status,
+          headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
+        });
+      }
+    }
+
     const data = (await doRes.json()) as {
       assistantText?: string;
       text?: string;

@@ -34,7 +34,8 @@ export function sanitizeDeskHtml(raw: string, maxLen: number): string {
     }
     return tag.replace(/\s(class|href|src|alt|title)\s*=\s*("[^"]*"|'[^']*')/gi, (m) => {
       const val = m.split("=")[1]?.trim() ?? "";
-      if (val.length > 200) return "";
+      const maxAttr = name === "a" && /\shref\s*=/.test(m) ? 2048 : 200;
+      if (val.length > maxAttr) return "";
       return m;
     });
   });

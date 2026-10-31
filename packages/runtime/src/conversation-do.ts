@@ -878,6 +878,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         storeConversationId?: string;
         deskAction?: string;
         turnstileToken?: string;
+        stream?: boolean;
       };
       if (!body.text) return new Response("bad_request", { status: 400 });
 
@@ -901,6 +902,15 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           { status: 429 },
         );
       }
+
+      if (body.stream) {
+        return this.ndjsonStreamUserMessage({
+          text: body.text,
+          deskAction: body.deskAction,
+          turnstileToken: body.turnstileToken,
+        });
+      }
+
       const result = await this.handleUserMessage(body.text, undefined, {
         deskAction: body.deskAction,
         turnstileToken: body.turnstileToken,
@@ -908,6 +918,60 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       return Response.json(result);
     }
     return new Response("not_found", { status: 404 });
+  }
+
+  private ndjsonStreamUserMessage(body: {
+    text: string;
+    deskAction?: string;
+    turnstileToken?: string;
+  }): Response {
+    const { readable, writable } = new TransformStream<Uint8Array>();
+    const writer = writable.getWriter();
+    const enc = new TextEncoder();
+    const writeLine = (obj: Record<string, unknown>) =>
+      writer.write(enc.encode(`${JSON.stringify(obj)}\n`));
+
+    this.ctx.waitUntil(
+      (async () => {
+        try {
+          const result = await this.handleUserMessage(
+            body.text,
+            {
+              onStreamStart: () => {
+                void writeLine({ type: "start" });
+              },
+              onDelta: (chunk) => {
+                void writeLine({ type: "delta", text: chunk });
+              },
+            },
+            {
+              deskAction: body.deskAction,
+              turnstileToken: body.turnstileToken,
+            },
+          );
+          await writeLine({
+            type: "done",
+            assistantText: result.assistantText,
+            phase: result.phase,
+            creditsEstimate: result.creditsEstimate,
+            checkoutUrl: result.checkoutUrl,
+            commerceCode: result.commerceCode,
+          });
+        } catch {
+          await writeLine({
+            type: "error",
+            error: "message_failed",
+            phase: this.phase,
+          });
+        } finally {
+          await writer.close();
+        }
+      })(),
+    );
+
+    return new Response(readable, {
+      headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
+    });
   }
 
   private async guardUsage(): Promise<string | null> {

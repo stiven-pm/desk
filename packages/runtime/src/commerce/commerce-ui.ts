@@ -66,8 +66,16 @@ export function appendCheckoutPaymentDeskUi(
 ): string {
   const url = checkoutUrl.trim();
   if (!url.startsWith("https://")) return text;
-  const html = `<p><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ir a pagar</a></p>`;
-  return text.trimEnd() + deskUiFence([{ type: "html", html }]);
+  return (
+    text.trimEnd() +
+    deskUiFence([
+      {
+        type: "external_link",
+        href: url,
+        label: "Ir a pagar",
+      },
+    ])
+  );
 }
 
 export function deskUiFence(blocks: Record<string, unknown>[]): string {

@@ -57,6 +57,11 @@ export type DeskUiBlock =
   | { type: "gen"; root: GenNode }
   | { type: "html"; html: string }
   | {
+      type: "external_link";
+      href: string;
+      label: string;
+    }
+  | {
       type: "host";
       /** ID registrado en la web del cliente (DeskHost.register). */
       component: string;

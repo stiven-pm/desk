@@ -69,6 +69,8 @@ function formatBlock(block: DeskUiBlock): string {
       return formatGenNode(block.root);
     case "html":
       return stripHtml(block.html);
+    case "external_link":
+      return block.label;
     case "host":
       return "(Contenido interactivo: pide al asesor el detalle en este chat.)";
     default:

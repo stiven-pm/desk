@@ -59,6 +59,7 @@ export const publicMessageBodySchema = z.object({
   storeLinkToken: z.string().max(2048).optional(),
   chatVisitorId: z.string().min(8).max(128).optional(),
   turnstileToken: z.string().max(4096).optional(),
+  stream: z.boolean().optional(),
 });
 
 export const commerceIntentBodySchema = z.object({
