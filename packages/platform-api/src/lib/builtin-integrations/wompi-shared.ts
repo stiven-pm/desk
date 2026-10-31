@@ -96,7 +96,7 @@ export function createWompiIntegrationPayload(opts: {
       },
       {
         id: `${p}_verify_merchant`,
-        capability: "payment.verify",
+        capability: "custom",
         slug: "verify_merchant",
         method: "GET",
         pathTemplate: "/merchants/{{publicKey}}",
@@ -109,6 +109,58 @@ export function createWompiIntegrationPayload(opts: {
         requiresConfirm: false,
         sortOrder: 1,
         authMode: "none",
+      },
+      {
+        id: `${p}_transaction_by_reference`,
+        capability: "payment.verify",
+        slug: "transaction_by_reference",
+        method: "GET",
+        pathTemplate: "/transactions",
+        queryTemplate: { reference: "{{reference}}" },
+        params: [],
+        response: {
+          fields: {
+            status: "data[0].status",
+            orderReference: "data[0].reference",
+          },
+        },
+        responseMap: {
+          fields: {
+            status: "data[0].status",
+            orderReference: "data[0].reference",
+          },
+        },
+        exposeToAi: false,
+        sideEffect: "read",
+        requiresConfirm: false,
+        sortOrder: 2,
+        authMode: "inherit",
+      },
+      {
+        id: `${p}_transaction_by_id`,
+        capability: "payment.verify",
+        slug: "transaction_by_id",
+        method: "GET",
+        pathTemplate: "/transactions/{{transactionId}}",
+        queryTemplate: {},
+        params: [],
+        response: {
+          fields: {
+            status: "data.status",
+            orderReference: "data.reference",
+          },
+        },
+        responseMap: {
+          fields: {
+            status: "data.status",
+            orderReference: "data.reference",
+          },
+        },
+        exposeToAi: false,
+        sideEffect: "read",
+        requiresConfirm: false,
+        sortOrder: 3,
+        authMode: "inherit",
       },
     ],
   };

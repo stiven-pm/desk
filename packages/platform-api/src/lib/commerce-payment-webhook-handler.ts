@@ -6,11 +6,13 @@ import {
   type PaymentWebhookProvider,
 } from "@chatbot/domain";
 import type { Env } from "../types";
-import { randomId } from "./http";
 import { providerSecretsFromManifest } from "./commerce-webhook-token";
-import { notifyOwnersOrderPaid } from "./commerce-order-notify";
 import { notifyCustomerPaymentResultInConversation } from "./commerce-payment-customer-notify";
-import { clearStockReservationsForConversation, decrementStockForOrderLines } from "@chatbot/runtime/commerce/stock-reservations";
+import { clearStockReservationsForConversation } from "@chatbot/runtime/commerce/stock-reservations";
+import {
+  fulfillCommerceOrderPaid,
+  parseOrderLines,
+} from "./commerce-order-paid";
 
 export async function applyCommercePaymentWebhook(
   env: Env,
@@ -19,6 +21,8 @@ export async function applyCommercePaymentWebhook(
   body: unknown,
   headers: {
     bearerToken?: string | null;
+    body?: unknown;
+    eventChecksumHeader?: string | null;
   },
 ): Promise<{ ok: boolean; code: string; orderId?: string }> {
   const row = await env.DB.prepare(
@@ -38,6 +42,8 @@ export async function applyCommercePaymentWebhook(
     provider,
     secrets,
     bearerToken: headers.bearerToken,
+    body: headers.body,
+    eventChecksumHeader: headers.eventChecksumHeader,
   });
   if (!auth.ok) {
     return { ok: false, code: auth.code };
@@ -74,14 +80,7 @@ export async function applyCommercePaymentWebhook(
       return { ok: true, code: "order_not_payable", orderId: order?.id };
     }
     let orderLines: Array<{ productId: string; quantity: number }> = [];
-    try {
-      orderLines = JSON.parse(order.lines_json) as Array<{
-        productId: string;
-        quantity: number;
-      }>;
-    } catch {
-      orderLines = [];
-    }
+    orderLines = parseOrderLines(order.lines_json);
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE sales_orders SET status = 'failed', updated_at = datetime('now') WHERE id = ? AND org_id = ?`,
@@ -133,49 +132,15 @@ export async function applyCommercePaymentWebhook(
     return { ok: true, code: "order_not_payable", orderId: order.id };
   }
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE sales_orders SET status = 'paid', updated_at = datetime('now') WHERE id = ? AND org_id = ?`,
-    ).bind(order.id, orgId),
-    env.DB.prepare(
-      `INSERT INTO commerce_payment_webhook_events (id, org_id, provider, external_event_id, order_id)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).bind(randomId(), orgId, provider, parsed.eventId, order.id),
-    env.DB.prepare(
-      `INSERT INTO commerce_events (id, org_id, name, meta_json)
-       VALUES (?, ?, 'payment.webhook_paid', ?)`,
-    ).bind(
-      randomId(),
-      orgId,
-      JSON.stringify({
-        orderId: order.id,
-        reference: ref,
-        provider,
-      }),
-    ),
-  ]);
-
-  let paidLines: Array<{ productId: string; quantity: number }> = [];
-  try {
-    paidLines = JSON.parse(order.lines_json) as Array<{
-      productId: string;
-      quantity: number;
-    }>;
-  } catch {
-    paidLines = [];
+  const fulfilled = await fulfillCommerceOrderPaid(env, orgId, order, {
+    source: "webhook",
+    reference: ref,
+    provider,
+    eventId: parsed.eventId,
+  });
+  if (!fulfilled.ok) {
+    return { ok: true, code: fulfilled.code, orderId: order.id };
   }
-  if (paidLines.length) {
-    await decrementStockForOrderLines(env.DB, orgId, paidLines);
-    await clearStockReservationsForConversation(
-      env.DB,
-      orgId,
-      order.conversation_id,
-    );
-  }
-
-  void notifyOwnersOrderPaid(env, orgId, order.id);
-  void notifyCustomerPaymentResultInConversation(env, orgId, order.id, "paid");
-
   return { ok: true, code: "paid", orderId: order.id };
 }
 

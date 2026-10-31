@@ -10,14 +10,15 @@ import {
   parseInternalDeskCommand,
   resolveNativeCheckoutFailure,
   validateCommerceBuyerField,
+  type VisitorStateBarChoice,
+  type VisitorTurnKind,
 } from "@chatbot/domain";
-import { DESK_UI_FENCE } from "@chatbot/chat-ui";
 import type { CommerceService } from "./commerce-service";
 import { parseCart } from "./cart-store";
 import {
   appendCartDeskUiFence,
-  appendPostCartChoicesDeskUi,
-  buildBuyerConsentDeskUi,
+  appendCheckoutPaymentDeskUi,
+  buildBuyerConsentLead,
   buildInvalidQuantityReply,
   buildProductDetailDeskUi,
   buildQuantityPickerDeskUi,
@@ -26,9 +27,10 @@ import {
 } from "./commerce-ui";
 import {
   getPublishedProduct,
-  searchPublishedProducts,
+  listPublishedProductsBrowse,
   type NativeProductRow,
 } from "./native-catalog";
+import { NATIVE_MENU_BROWSE_LIMIT } from "./catalog-search";
 import { reservedQtyForProduct } from "./stock-reservations";
 import {
   buildNoStockVisitorReply,
@@ -117,10 +119,10 @@ function parseUx(raw: string | null): CommerceUxState | null {
   }
 }
 
-function checkoutFailureMessage(
+function checkoutFailureNativeTurn(
   checkout: { code?: string; subtotalCents?: number; currency?: string },
   cartCurrency: string,
-): string {
+): NativeCommerceTurnResult {
   const resolved = resolveNativeCheckoutFailure({
     code: checkout.code,
     subtotalCents: checkout.subtotalCents,
@@ -129,21 +131,19 @@ function checkoutFailureMessage(
     formatMoney: formatMoneyCents,
   });
   if (resolved.type === "buyer_consent") {
-    return buildBuyerConsentDeskUi();
+    return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
   }
   if (resolved.type === "price_confirm") {
-    const choices = {
-      type: "choices",
-      items: [
+    return nativeTurn(nativePriceChangedLead(resolved.totalFormatted), "checkout", {
+      harnessExtraChoices: [
         {
           label: COMMERCE_VISITOR_LABEL.confirmPriceButton,
           message: DESK_CMD_CONFIRM_PRICE,
         },
       ],
-    };
-    return `${nativePriceChangedLead(resolved.totalFormatted)}\n\`\`\`${DESK_UI_FENCE}\n${JSON.stringify({ blocks: [choices] })}\n\`\`\``;
+    });
   }
-  return resolved.message;
+  return nativeTurn(resolved.message, "checkout", { commerceCode: checkout.code });
 }
 
 function parsePickQtyReply(
@@ -200,6 +200,23 @@ async function noStockVisitorReply(
   return buildNoStockVisitorReply({ row, maxAdd, reservedOthers });
 }
 
+export type NativeCommerceTurnResult = {
+  assistantText: string;
+  turnKind: VisitorTurnKind;
+  actionProductId?: string;
+  harnessExtraChoices?: VisitorStateBarChoice[];
+  checkoutUrl?: string;
+  commerceCode?: string;
+};
+
+function nativeTurn(
+  assistantText: string,
+  turnKind: VisitorTurnKind,
+  extra?: Omit<NativeCommerceTurnResult, "assistantText" | "turnKind">,
+): NativeCommerceTurnResult {
+  return { assistantText, turnKind, ...extra };
+}
+
 async function startPickQuantity(args: {
   db: D1Database;
   orgId: string;
@@ -214,21 +231,24 @@ async function startPickQuantity(args: {
     args.row,
   );
   if (maxAdd < 1) {
-    return {
-      assistantText: buildNoStockVisitorReply({
+    return nativeTurn(
+      buildNoStockVisitorReply({
         row: args.row,
         maxAdd,
         reservedOthers,
       }),
-    };
+      "product_detail",
+    );
   }
   args.setMeta(
     META_COMMERCE_UX,
     JSON.stringify({ mode: "pick_qty", productId: args.row.id }),
   );
-  return {
-    assistantText: buildQuantityPickerDeskUi(args.row, maxAdd),
-  };
+  return nativeTurn(
+    buildQuantityPickerDeskUi(args.row, maxAdd),
+    "pick_qty",
+    { actionProductId: args.row.id },
+  );
 }
 
 async function addProductWithQuantity(args: {
@@ -248,7 +268,7 @@ async function addProductWithQuantity(args: {
     reservedOthers,
   );
   if (!valid.ok) {
-    return { assistantText: valid.message };
+    return nativeTurn(valid.message, "pick_qty", { actionProductId: row.id });
   }
   const quantity = valid.quantity;
   if (Number(row.allows_additions) === 1) {
@@ -260,9 +280,9 @@ async function addProductWithQuantity(args: {
         quantity,
       }),
     );
-    return {
-      assistantText: nativeLineNotesPrompt(row.name),
-    };
+    return nativeTurn(nativeLineNotesPrompt(row.name), "line_notes", {
+      actionProductId: row.id,
+    });
   }
   const added = await svc.cartAdd({
     productId: row.id,
@@ -280,29 +300,18 @@ async function addProductWithQuantity(args: {
         svc.getCart(),
         reservedOthers,
       );
-      return {
-        assistantText: again.ok
-          ? NATIVE_COMMERCE_LEAD.insufficientStock
-          : again.message,
-      };
+      return nativeTurn(
+        again.ok ? NATIVE_COMMERCE_LEAD.insufficientStock : again.message,
+        "cart_updated",
+      );
     }
-    return {
-      assistantText: nativeCartAddFailed(added.code),
-    };
+    return nativeTurn(nativeCartAddFailed(added.code), "faq");
   }
-  return {
-    assistantText: appendPostCartChoicesDeskUi(
-      appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartAddSuccess, added.cart),
-      added.cart,
-    ),
-  };
+  return nativeTurn(
+    appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartAddSuccess, added.cart),
+    "cart_updated",
+  );
 }
-
-export type NativeCommerceTurnResult = {
-  assistantText: string;
-  checkoutUrl?: string;
-  commerceCode?: string;
-};
 
 async function runCheckout(
   svc: CommerceService,
@@ -318,15 +327,13 @@ async function runCheckout(
     turnstileToken: opts?.turnstileToken,
   });
   if (!checkout.ok) {
-    return {
-      assistantText: checkoutFailureMessage(checkout, svc.getCart().currency),
-      commerceCode: checkout.code,
-    };
+    return checkoutFailureNativeTurn(checkout, svc.getCart().currency);
   }
-  return {
-    assistantText: NATIVE_COMMERCE_LEAD.checkoutLink,
-    checkoutUrl: checkout.checkoutUrl,
-  };
+  return nativeTurn(
+    appendCheckoutPaymentDeskUi(NATIVE_COMMERCE_LEAD.checkoutLink, checkout.checkoutUrl),
+    "checkout",
+    { checkoutUrl: checkout.checkoutUrl },
+  );
 }
 
 export async function tryNativeCommerceTurn(args: {
@@ -354,7 +361,7 @@ export async function tryNativeCommerceTurn(args: {
     const next = await nextBuyerField(svc, svc.getBuyer());
     if (next) {
       setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-      return { assistantText: buyerPrompt(next) };
+      return nativeTurn(buyerPrompt(next), "buyer_field");
     }
     return await runCheckout(svc, { turnstileToken });
   }
@@ -372,7 +379,7 @@ export async function tryNativeCommerceTurn(args: {
     const row = await getPublishedProduct(db, orgId, ux.productId);
     if (!row) {
       clearUx();
-      return { assistantText: NATIVE_COMMERCE_LEAD.productUnavailable };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.productUnavailable, "faq");
     }
     const { reservedOthers, maxAdd } = await stockLimitsForAdd(
       db,
@@ -382,7 +389,9 @@ export async function tryNativeCommerceTurn(args: {
     );
     const qty = parsePickQtyReply(trimmed, ux.productId);
     if (qty == null) {
-      return { assistantText: buildInvalidQuantityReply(row, maxAdd) };
+      return nativeTurn(buildInvalidQuantityReply(row, maxAdd), "pick_qty", {
+        actionProductId: row.id,
+      });
     }
     const valid = validateAddQuantityForRow(
       row,
@@ -391,7 +400,7 @@ export async function tryNativeCommerceTurn(args: {
       reservedOthers,
     );
     if (!valid.ok) {
-      return { assistantText: valid.message };
+      return nativeTurn(valid.message, "pick_qty", { actionProductId: row.id });
     }
     clearUx();
     return addProductWithQuantity({
@@ -421,20 +430,18 @@ export async function tryNativeCommerceTurn(args: {
     clearUx();
     if (!added.ok) {
       if (added.code === "insufficient_stock") {
-        return {
-          assistantText: NATIVE_COMMERCE_LEAD.insufficientStockWithNotes,
-        };
+        return nativeTurn(
+          NATIVE_COMMERCE_LEAD.insufficientStockWithNotes,
+          "line_notes",
+          { actionProductId: row.id },
+        );
       }
-      return {
-        assistantText: nativeCartAddFailed(added.code),
-      };
+      return nativeTurn(nativeCartAddFailed(added.code), "faq");
     }
-    return {
-      assistantText: appendPostCartChoicesDeskUi(
-        appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartAddSuccess, added.cart),
-        added.cart,
-      ),
-    };
+    return nativeTurn(
+      appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartAddSuccess, added.cart),
+      "cart_updated",
+    );
   }
 
   if (ux?.mode === "buyer") {
@@ -442,7 +449,7 @@ export async function tryNativeCommerceTurn(args: {
     const field = ux.field;
     const checked = validateCommerceBuyerField(String(field), trimmed);
     if (!checked.ok) {
-      return { assistantText: checked.message };
+      return nativeTurn(checked.message, "buyer_field");
     }
     const buyer: CommerceBuyer = {
       ...prev,
@@ -453,7 +460,7 @@ export async function tryNativeCommerceTurn(args: {
     const next = await nextBuyerField(svc, buyer);
     if (next) {
       setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-      return { assistantText: buyerPrompt(next) };
+      return nativeTurn(buyerPrompt(next), "buyer_field");
     }
     clearUx();
     return await runCheckout(svc, { turnstileToken });
@@ -461,58 +468,56 @@ export async function tryNativeCommerceTurn(args: {
 
   if (deskCmd?.kind === "menu") {
     clearUx();
-    const rows = await searchPublishedProducts(db, orgId, "", 24);
+    const rows = await listPublishedProductsBrowse(
+      db,
+      orgId,
+      NATIVE_MENU_BROWSE_LIMIT,
+    );
     if (!rows.length) {
-      return { assistantText: NATIVE_COMMERCE_LEAD.catalogEmpty };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.catalogEmpty, "faq");
     }
-    const cart = cartForCommands(svc);
-    let assistantText = buildProductCatalogPickerDeskUi(
+    const assistantText = buildProductCatalogPickerDeskUi(
       rows,
       COMMERCE_VISITOR_LABEL.catalogModalButton,
     );
-    if (cart.lines.length) {
-      assistantText = appendPostCartChoicesDeskUi(assistantText, cart);
-    }
-    return { assistantText };
+    return nativeTurn(assistantText, "browse_catalog");
   }
 
   if (deskCmd?.kind === "cart") {
     const cart = cartForCommands(svc);
     if (!cart.lines.length) {
-      return {
-        assistantText: appendPostCartChoicesDeskUi(
-          NATIVE_COMMERCE_LEAD.cartEmpty,
-          cart,
-          "empty",
-        ),
-      };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.cartEmpty, "cart_view");
     }
-    return {
-      assistantText: appendPostCartChoicesDeskUi(
-        appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartShow, cart),
-        cart,
-        "cart_view",
-      ),
-    };
+    return nativeTurn(
+      appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartShow, cart),
+      "cart_view",
+    );
   }
 
   if (deskCmd?.kind === "pay") {
     await ensureCheckoutCartFromLinked(svc, getMeta, fetchLinkedStoreCart);
     const cart = svc.getCart();
     if (!cart.lines.length) {
-      return { assistantText: NATIVE_COMMERCE_LEAD.payNeedItems };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.payNeedItems, "cart_view");
     }
     if (!svc.hasBuyerConsent()) {
-      return { assistantText: buildBuyerConsentDeskUi() };
+      return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
     }
     const next = await nextBuyerField(svc, svc.getBuyer());
     if (next) {
       setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-      return { assistantText: buyerPrompt(next) };
+      return nativeTurn(buyerPrompt(next), "buyer_field");
     }
     const checkoutResult = await runCheckout(svc, { turnstileToken });
     if (checkoutResult.checkoutUrl) {
-      checkoutResult.assistantText = NATIVE_COMMERCE_LEAD.payLink;
+      return nativeTurn(
+        appendCheckoutPaymentDeskUi(
+          NATIVE_COMMERCE_LEAD.payLink,
+          checkoutResult.checkoutUrl,
+        ),
+        "checkout",
+        { checkoutUrl: checkoutResult.checkoutUrl },
+      );
     }
     return checkoutResult;
   }
@@ -520,49 +525,20 @@ export async function tryNativeCommerceTurn(args: {
   if (deskCmd?.kind === "set_qty") {
     const cart = await svc.cartUpdate(deskCmd.productId, deskCmd.quantity);
     if (!cart.lines.length) {
-      return {
-        assistantText: appendPostCartChoicesDeskUi(
-          NATIVE_COMMERCE_LEAD.cartEmptied,
-          cart,
-          "empty",
-        ),
-      };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.cartEmptied, "cart_view");
     }
-    return {
-      assistantText: appendPostCartChoicesDeskUi(
-        appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartUpdated, cart),
-        cart,
-        "cart_view",
-      ),
-    };
+    return nativeTurn(
+      appendCartDeskUiFence(NATIVE_COMMERCE_LEAD.cartUpdated, cart),
+      "cart_view",
+    );
   }
 
   if (deskCmd?.kind === "add") {
     const row = await getPublishedProduct(db, orgId, deskCmd.productId);
     if (!row) {
-      return { assistantText: NATIVE_COMMERCE_LEAD.productUnavailable };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.productUnavailable, "faq");
     }
     if (deskCmd.quantity == null) {
-      if (Number(row.allows_additions) === 1) {
-        const { maxAdd } = await stockLimitsForAdd(db, orgId, svc, row);
-        if (maxAdd < 1) {
-          return {
-            assistantText: await noStockVisitorReply(db, orgId, svc, row),
-          };
-        }
-        clearUx();
-        setMeta(
-          META_COMMERCE_UX,
-          JSON.stringify({
-            mode: "line_notes",
-            productId: row.id,
-            quantity: 1,
-          }),
-        );
-        return {
-          assistantText: nativeLineNotesPrompt(chatCatalogTitle(row)),
-        };
-      }
       return startPickQuantity({ db, orgId, row, setMeta, svc });
     }
     clearUx();
@@ -579,11 +555,13 @@ export async function tryNativeCommerceTurn(args: {
   if (deskCmd?.kind === "view_product") {
     const row = await getPublishedProduct(db, orgId, deskCmd.productId);
     if (!row) {
-      return { assistantText: NATIVE_COMMERCE_LEAD.productUnavailable };
+      return nativeTurn(NATIVE_COMMERCE_LEAD.productUnavailable, "faq");
     }
-    return {
-      assistantText: buildProductDetailDeskUi(row, svc.getCart(), null),
-    };
+    return nativeTurn(
+      buildProductDetailDeskUi(row, svc.getCart(), null),
+      "product_detail",
+      { actionProductId: row.id },
+    );
   }
 
   return null;

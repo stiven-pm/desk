@@ -1,4 +1,4 @@
-import { COMMERCE_VISITOR_LABEL } from "@chatbot/domain";
+import { COMMERCE_VISITOR_LABEL, NATIVE_COMMERCE_LEAD } from "@chatbot/domain";
 import { parseAssistantUi, DESK_UI_FENCE } from "@chatbot/chat-ui";
 import type { NativeProductRow } from "./native-catalog";
 import { chatCatalogTitle, buildNativeCatalogVisitorFallback } from "./native-catalog";
@@ -170,7 +170,7 @@ export function buildProductCatalogPickerDeskUi(
   intro?: string,
 ): string {
   if (!rows.length) return buildNativeCatalogVisitorFallback([]);
-  const prose = intro?.trim() ?? "Estos son nuestros productos publicados:";
+  const prose = intro?.trim() ?? NATIVE_COMMERCE_LEAD.catalogBrowse;
   return mergeProductCatalogPickerDeskUi(prose, rows, buttonLabel);
 }
 

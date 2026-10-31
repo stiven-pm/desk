@@ -21,6 +21,7 @@ import {
   orgDeletionBlocksLogin,
   scheduleOrgDeletion,
 } from "../lib/account-deletion";
+import { orgTimezoneSchema, resolveOrgTimezone } from "@chatbot/domain";
 import { invalidateBotCache } from "../lib/tenant-cache";
 
 async function uniqueOrgSlug(
@@ -47,7 +48,7 @@ export function registerAdminAccountRoutes(app: Hono<AppEnv>): void {
     if ("response" in auth) return auth.response;
 
     const org = await c.env.DB.prepare(
-      `SELECT id, name, slug, deletion_scheduled_at FROM orgs WHERE id = ?`,
+      `SELECT id, name, slug, deletion_scheduled_at, timezone FROM orgs WHERE id = ?`,
     )
       .bind(auth.user.orgId)
       .first<{
@@ -55,6 +56,7 @@ export function registerAdminAccountRoutes(app: Hono<AppEnv>): void {
         name: string;
         slug: string;
         deletion_scheduled_at: string | null;
+        timezone: string | null;
       }>();
 
     const user = await c.env.DB.prepare(
@@ -73,6 +75,7 @@ export function registerAdminAccountRoutes(app: Hono<AppEnv>): void {
             id: org.id,
             name: org.name,
             slug: org.slug,
+            timezone: resolveOrgTimezone(org.timezone),
             deletionScheduledAt: org.deletion_scheduled_at,
           }
         : null,
@@ -85,26 +88,40 @@ export function registerAdminAccountRoutes(app: Hono<AppEnv>): void {
     if ("response" in auth) return auth.response;
 
     const parsed = z
-      .object({ name: z.string().trim().min(2).max(120) })
+      .object({
+        name: z.string().trim().min(2).max(120).optional(),
+        timezone: orgTimezoneSchema.optional(),
+      })
       .safeParse(await c.req.json());
     if (!parsed.success) return apiError("invalid_body", 400);
+    if (parsed.data.name == null && parsed.data.timezone == null) {
+      return apiError("invalid_body", 400);
+    }
 
     const current = await c.env.DB.prepare(
-      `SELECT name, slug FROM orgs WHERE id = ?`,
+      `SELECT name, slug, timezone FROM orgs WHERE id = ?`,
     )
       .bind(auth.user.orgId)
-      .first<{ name: string; slug: string }>();
+      .first<{ name: string; slug: string; timezone: string | null }>();
     if (!current) return apiError("not_found", 404);
 
+    const nextName = parsed.data.name ?? current.name;
+    const nextTimezone = parsed.data.timezone
+      ? resolveOrgTimezone(parsed.data.timezone)
+      : resolveOrgTimezone(current.timezone);
+
     const suffix = stableSlugSuffix(current.slug);
-    const candidate = buildOrgSlugFromName(parsed.data.name, suffix);
-    const slug = await uniqueOrgSlug(c.env, candidate, auth.user.orgId!);
+    const candidate = buildOrgSlugFromName(nextName, suffix);
+    const slug =
+      nextName === current.name
+        ? current.slug
+        : await uniqueOrgSlug(c.env, candidate, auth.user.orgId!);
     if (!slug) return apiError("slug_unavailable", 409);
 
     await c.env.DB.prepare(
-      `UPDATE orgs SET name = ?, slug = ? WHERE id = ?`,
+      `UPDATE orgs SET name = ?, slug = ?, timezone = ? WHERE id = ?`,
     )
-      .bind(parsed.data.name, slug, auth.user.orgId)
+      .bind(nextName, slug, nextTimezone, auth.user.orgId)
       .run();
 
     const bots = await c.env.DB.prepare(`SELECT id FROM bots WHERE org_id = ?`)
@@ -116,7 +133,7 @@ export function registerAdminAccountRoutes(app: Hono<AppEnv>): void {
 
     return json({
       ok: true,
-      org: { name: parsed.data.name, slug },
+      org: { name: nextName, slug, timezone: nextTimezone },
     });
   });
 

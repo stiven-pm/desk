@@ -16,6 +16,7 @@ export const COMMERCE_VISITOR_LABEL = {
 /** Prosa fija del turno nativo (sin LLM). */
 export const NATIVE_COMMERCE_LEAD = {
   catalogEmpty: "Por ahora no hay productos publicados.",
+  catalogBrowse: "Estos son nuestros productos publicados:",
   productUnavailable: "Ese producto ya no está disponible.",
   cartEmpty: "Tu carrito está vacío.",
   cartEmptied: "Tu carrito quedó vacío.",

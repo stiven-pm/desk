@@ -4,6 +4,10 @@ export const VISITOR_SESSION_IDLE_MINUTES = 15;
 /** Warn in the chat before the session expires (minutes before idle cutoff). */
 export const VISITOR_SESSION_IDLE_WARN_MINUTES = 3;
 
+/** Shown in hosted chat when the bot has no custom idle reply configured. */
+export const VISITOR_SESSION_IDLE_WARN_DEFAULT =
+  "Llevamos un rato sin actividad. Si no respondes, reiniciaremos el chat.";
+
 /** @deprecated Use VISITOR_SESSION_IDLE_MINUTES; kept for API field compatibility. */
 export const VISITOR_SESSION_IDLE_HOURS = VISITOR_SESSION_IDLE_MINUTES / 60;
 

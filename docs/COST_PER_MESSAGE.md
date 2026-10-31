@@ -3,14 +3,14 @@
 Fuentes de precio (verificar en dashboard; última revisión doc **oct 2026**):
 
 - [Workers AI — pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/)
-- [DeepSeek V4 Flash](https://developers.cloudflare.com/workers-ai/models/deepseek-v4-flash-0731/) — **$0.44 / M input**, **$1.32 / M output**
+- [GLM-5.3-Flash](https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/) — **$0.15 / M input**, **$0.50 / M output**
 - [BGE-M3](https://developers.cloudflare.com/workers-ai/models/bge-m3/) — **$0.0118 / M input** (solo entrada; sin output)
 - [Vectorize](https://developers.cloudflare.com/vectorize/platform/pricing/) — **$0.01 / millón de dimensiones consultadas** (+ almacenamiento; 50M dims consultadas/mes incluidas en Workers Paid)
 - [Durable Objects](https://developers.cloudflare.com/durable-objects/platform/pricing/) — requests **$0.15 / M** (+ duración GB-s si el DO no hiberna)
 - [Workers](https://developers.cloudflare.com/workers/platform/pricing/) — requests incluidos en plan Paid (~10M/mes)
 - [R2](https://developers.cloudflare.com/r2/pricing/) — **no** en cada mensaje de chat (solo ingesta / descarga de PDF)
 
-Modelos en prod: `docs/AI.md` — `@cf/deepseek-ai/deepseek-v4-flash-0731` + `@cf/baai/bge-m3` (1024 dims).
+Modelos en prod: `docs/AI.md` — `@cf/zai-org/glm-5.3-flash` + `@cf/baai/bge-m3` (1024 dims).
 
 ## Qué hace Desk en **un** mensaje de usuario (RAG típico)
 
@@ -18,7 +18,7 @@ Modelos en prod: `docs/AI.md` — `@cf/deepseek-ai/deepseek-v4-flash-0731` + `@c
 Cliente → Worker API → Conversation DO
   → embed pregunta (BGE-M3)
   → Vectorize topK=4 (índice compartido, filtro org_id en metadata)
-  → chat DeepSeek (system + contexto RAG recortado + user, max ~640 tokens salida)
+  → chat GLM-5.3-Flash (system + contexto RAG recortado + user, max ~640 tokens salida)
   → D1 usage + DO SQLite (historial)
 ```
 

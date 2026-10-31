@@ -5,6 +5,7 @@ import {
   orgLimits,
   planFromSlug,
   planRetailUsd,
+  resolveOrgTimezone,
   totalMeteredCredits,
   type OrgUsageSnapshot,
   type PlanSlug,
@@ -20,6 +21,7 @@ export type OpsOrgRow = {
   slug: string;
   plan_slug: string;
   status: string;
+  timezone: string;
   created_at: string;
   ai_credits_used: number;
   setup_credits_used: number;
@@ -40,7 +42,7 @@ export type OpsOrgRow = {
 export async function fetchOpsOrgMetrics(env: Env): Promise<OpsOrgRow[]> {
   const period = periodStartIso();
   const rows = await env.DB.prepare(
-    `SELECT o.id, o.name, o.slug, o.plan_slug, o.status, o.created_at,
+    `SELECT o.id, o.name, o.slug, o.plan_slug, o.status, o.timezone, o.created_at,
             COALESCE(u.ai_credits_used, 0) as ai_credits_used,
             COALESCE(u.setup_credits_used, 0) as setup_credits_used,
             COALESCE(u.rag_meter_credits, 0) as rag_meter_credits,
@@ -59,6 +61,7 @@ export async function fetchOpsOrgMetrics(env: Env): Promise<OpsOrgRow[]> {
       slug: string;
       plan_slug: string;
       status: string;
+      timezone: string | null;
       created_at: string;
       ai_credits_used: number;
       setup_credits_used: number;
@@ -84,6 +87,7 @@ export async function fetchOpsOrgMetrics(env: Env): Promise<OpsOrgRow[]> {
     const margin = estimateOrgGrossMarginUsd(snap, "realisticAllIn");
     out.push({
       ...r,
+      timezone: resolveOrgTimezone(r.timezone),
       wallet_balance: wallet,
       mrr_usd: planRetailUsd(slug),
       metered_credits: totalMeteredCredits(snap),

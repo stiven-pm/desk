@@ -3,6 +3,7 @@ import {
   registerBodySchema,
   loginBodySchema,
   resolveMemberCapabilities,
+  resolveOrgTimezone,
 } from "@chatbot/domain";
 import type { AppEnv, Env } from "../types";
 import {
@@ -50,6 +51,7 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
 
     const email = parsed.data.email.trim().toLowerCase();
     const { password, orgName } = parsed.data;
+    const orgTimezone = resolveOrgTimezone(parsed.data.timezone);
     const userId = randomId();
     const orgId = randomId();
     const slug = `${slugify(orgName)}-${userId.slice(0, 6)}`;
@@ -72,8 +74,8 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
         `INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)`,
       ).bind(userId, email, passwordHash),
       c.env.DB.prepare(
-        `INSERT INTO orgs (id, name, slug, status, period_start) VALUES (?, ?, ?, 'pending', ?)`,
-      ).bind(orgId, orgName, slug, period),
+        `INSERT INTO orgs (id, name, slug, status, period_start, timezone) VALUES (?, ?, ?, 'pending', ?, ?)`,
+      ).bind(orgId, orgName, slug, period, orgTimezone),
       c.env.DB.prepare(
         `INSERT INTO memberships (org_id, user_id, role) VALUES (?, ?, 'owner')`,
       ).bind(orgId, userId),

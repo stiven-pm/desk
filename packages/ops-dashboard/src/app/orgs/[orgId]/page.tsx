@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { ORG_TIMEZONE_OPTIONS, formatOrgTimezoneLabel } from "@chatbot/domain";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { OpsShell } from "@/components/ops-shell";
 import { opsApi } from "@/lib/api";
@@ -14,6 +15,7 @@ type OrgDetail = {
     slug: string;
     plan_slug: string;
     status: string;
+    timezone: string;
     metered_credits: number;
     messages_count: number;
     pct_messages: number;
@@ -63,6 +65,9 @@ export default function OpsOrgDetailPage() {
     instanceId: string;
     name: string;
   } | null>(null);
+  const [timezone, setTimezone] = useState("America/Bogota");
+  const [tzBusy, setTzBusy] = useState(false);
+  const [tzFlash, setTzFlash] = useState<Flash>(null);
 
   const loadIntegrations = useCallback(async () => {
     const d = await opsApi<{ integrations: OrgIntegration[] }>(
@@ -77,7 +82,10 @@ export default function OpsOrgDetailPage() {
       return;
     }
     opsApi<OrgDetail>(`/v1/ops/orgs/${orgId}`)
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        setTimezone(d.org.timezone ?? "America/Bogota");
+      })
       .catch(() => {
         window.location.href = "/orgs";
       });
@@ -133,6 +141,27 @@ export default function OpsOrgDetailPage() {
     }
   }
 
+  async function saveTimezone() {
+    setTzBusy(true);
+    setTzFlash(null);
+    try {
+      await opsApi(`/v1/ops/orgs/${orgId}/timezone`, {
+        method: "PATCH",
+        body: JSON.stringify({ timezone }),
+      });
+      setTzFlash({ type: "ok", text: "Zona horaria actualizada." });
+      const fresh = await opsApi<OrgDetail>(`/v1/ops/orgs/${orgId}`);
+      setData(fresh);
+    } catch (e) {
+      setTzFlash({
+        type: "err",
+        text: e instanceof Error ? e.message : "No se pudo guardar",
+      });
+    } finally {
+      setTzBusy(false);
+    }
+  }
+
   async function grantCredits() {
     setWalletFlash(null);
     await opsApi(`/v1/ops/orgs/${orgId}/wallet/grant`, {
@@ -166,8 +195,44 @@ export default function OpsOrgDetailPage() {
         </Link>
         <h1 className="mt-4 text-2xl font-semibold">{o.name}</h1>
         <p className="text-sm text-[var(--ops-muted)]">
-          {o.plan_slug} · {o.status} · MRR ${o.mrr_usd}
+          {o.plan_slug} · {o.status} · MRR ${o.mrr_usd} ·{" "}
+          {formatOrgTimezoneLabel(o.timezone ?? timezone)}
         </p>
+
+        <section className="mt-6 flex flex-wrap items-end gap-3 rounded border border-[var(--ops-border)] bg-white p-4">
+          <label className="block text-sm">
+            Zona horaria (métricas)
+            <select
+              className="mt-1 block min-w-[220px] rounded border border-[var(--ops-border)] px-3 py-2 text-sm"
+              value={timezone}
+              disabled={tzBusy}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              {ORG_TIMEZONE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={tzBusy}
+            onClick={() => void saveTimezone()}
+            className="rounded px-4 py-2 text-sm font-medium text-[var(--ops-ink)]"
+            style={{ background: "var(--ops-accent)" }}
+          >
+            Guardar zona
+          </button>
+          {tzFlash ? (
+            <p
+              className={`text-sm ${tzFlash.type === "ok" ? "text-emerald-800" : "text-red-700"}`}
+              role="status"
+            >
+              {tzFlash.text}
+            </p>
+          ) : null}
+        </section>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
           <Stat label="Mensajes" value={`${o.messages_count} (${o.pct_messages}%)`} />

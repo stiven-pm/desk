@@ -1,6 +1,7 @@
 import type { DeskCommand } from "./desk-action";
 import { deskCommandDisplayLabel, deskCommandToInternal } from "./desk-action";
 import { NATIVE_COMMERCE_LEAD } from "./commerce-native-messages";
+import { buildCommerceOfferActionPromptSection } from "./pending-prompt";
 
 /** Tipos de bloque desk-ui (alineados con @chatbot/chat-ui). */
 export const DESK_UI_BLOCK_TYPE = {
@@ -28,10 +29,8 @@ export const COMMERCE_TOOL = {
   startCheckout: "commerce_start_checkout",
   getOrder: "commerce_get_order",
   getPaymentStatus: "commerce_get_payment_status",
+  offerAction: "commerce_offer_action",
 } as const;
-
-export type CommerceToolName =
-  (typeof COMMERCE_TOOL)[keyof typeof COMMERCE_TOOL];
 
 export type CommerceTurnHandler = "native" | "agent";
 
@@ -206,7 +205,8 @@ export function buildCommerceAgentGraphSection(): string {
 | Situación | Herramientas | UI (desk-ui) |
 |-----------|--------------|--------------|
 | Saludo / charla | ninguna salvo que pida ver oferta | choices opcional |
-| Explorar oferta | \`${t.searchProducts}\` obligatorio | runtime adjunta \`${DESK_UI_BLOCK_TYPE.productCatalog}\` |
+| Explorar oferta | \`${t.searchProducts}\` con \`mode: "browse"\` o \`"search"\` + query corto de producto | runtime adjunta \`${DESK_UI_BLOCK_TYPE.productCatalog}\` |
+| Oferta sí/no (menú, carrito, pago) | \`${t.offerAction}\` antes de preguntar | \`pending_prompt\` + botones firmados |
 | Producto concreto | \`${t.getProductDetails}\` | \`${DESK_UI_BLOCK_TYPE.offers}\` o choices |
 | Añadir / editar carrito | \`${t.cartAdd}\`, \`${t.cartUpdate}\`, \`${t.cartGet}\` | \`${DESK_UI_BLOCK_TYPE.cart}\` si ayuda |
 | Datos comprador | \`${t.setBuyer}\` | prosa + una pregunta por campo |
@@ -215,5 +215,7 @@ export function buildCommerceAgentGraphSection(): string {
 | FAQ / políticas | contexto documental | sin commerce salvo que compren |
 
 **Prohibido:** productId/priceCents/stock inventados; listar catálogo entero en prosa; prometer carrito/checkout sin tool; duplicar lo que un botón nativo ya hizo en el mensaje anterior.
+
+${buildCommerceOfferActionPromptSection()}
 `.trim();
 }

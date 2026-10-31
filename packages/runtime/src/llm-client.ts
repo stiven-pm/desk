@@ -1,6 +1,6 @@
 /**
  * Cloudflare Workers AI — sin API keys externas.
- * Modelos por defecto: DeepSeek V4 Flash (chat) + BGE-M3 (embeddings).
+ * Modelos por defecto: GLM-5.3-Flash (chat) + BGE-M3 (embeddings).
  */
 
 import { CHAT_DEFAULT_MAX_TOKENS } from "@chatbot/domain";
@@ -8,7 +8,7 @@ import { CHAT_DEFAULT_MAX_TOKENS } from "@chatbot/domain";
 export const DEFAULT_LLM_TIMEOUT_MS = 45_000;
 
 export const DEFAULT_WORKERS_AI_CHAT_MODEL =
-  "@cf/deepseek-ai/deepseek-v4-flash-0731";
+  "@cf/zai-org/glm-5.3-flash";
 export const DEFAULT_WORKERS_AI_EMBEDDING_MODEL = "@cf/baai/bge-m3";
 /** Dimensión densa de BGE-M3 en Workers AI */
 export const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
@@ -64,7 +64,7 @@ function workersAiConfigured(env: LlmEnv): boolean {
   return Boolean(env.AI);
 }
 
-/** V4 reasoning models can burn max_tokens on thinking and return content=null. */
+/** Reasoning models can burn max_tokens on thinking and return content=null. */
 export function workersAiChatRequestBody(
   model: string,
   base: Record<string, unknown>,
@@ -72,6 +72,9 @@ export function workersAiChatRequestBody(
   const body = { ...base };
   if (/deepseek-v4|deepseek-ai\/deepseek-v4/i.test(model)) {
     body.reasoning_effort = "none";
+  } else if (/zai-org\/glm|glm-5\.3-flash/i.test(model)) {
+    // GLM maps "none" → max on Workers AI; use explicit low for chat/tools latency.
+    body.reasoning_effort = "low";
   }
   return body;
 }

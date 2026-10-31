@@ -10,6 +10,7 @@ export type PublicChatBootstrap = {
   publishableKey: string;
   themeCssUrl: string | null;
   welcomeMessage: string | null;
+  idleReplyMessage: string | null;
   apiUrl: string;
   turnstileSiteKey?: string | null;
 };
@@ -23,7 +24,8 @@ export async function loadPublicChatByOrgSlug(
 > {
   const row = await env.DB.prepare(
     `SELECT o.id AS org_id, o.name AS org_name, o.status, o.slug,
-            b.id AS bot_id, b.name AS bot_name, b.theme_css_url, b.welcome_message
+            b.id AS bot_id, b.name AS bot_name, b.theme_css_url, b.welcome_message,
+            b.idle_reply_message
      FROM orgs o
      JOIN bots b ON b.org_id = o.id
      WHERE o.slug = ?
@@ -40,6 +42,7 @@ export async function loadPublicChatByOrgSlug(
       bot_name: string;
       theme_css_url: string | null;
       welcome_message: string | null;
+      idle_reply_message: string | null;
     }>();
 
   if (!row) return { ok: false, error: "not_found" };
@@ -58,6 +61,7 @@ export async function loadPublicChatByOrgSlug(
       publishableKey,
       themeCssUrl: row.theme_css_url,
       welcomeMessage: row.welcome_message,
+      idleReplyMessage: row.idle_reply_message,
       apiUrl: widgetCdnBase(env),
     },
   };

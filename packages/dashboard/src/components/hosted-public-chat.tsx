@@ -15,7 +15,7 @@ import {
   migrateStoreChatSessionSplit,
   publicVisitorStorageKey,
 } from "@/lib/public-visitor-session";
-import { isDeskActionToken } from "@chatbot/domain";
+import { deskCommandDisplayLabel, isDeskActionToken, isPublicOrderLookupKey, VISITOR_SESSION_IDLE_MINUTES, VISITOR_SESSION_IDLE_WARN_DEFAULT, VISITOR_SESSION_IDLE_WARN_MINUTES } from "@chatbot/domain";
 import { TurnstileWidget } from "@/components/turnstile-widget";
 import { AssistantMarkdown } from "@/components/assistant-markdown";
 
@@ -27,9 +27,58 @@ export type PublicChatBootstrap = {
   publishableKey: string;
   themeCssUrl: string | null;
   welcomeMessage: string | null;
+  idleReplyMessage?: string | null;
   apiUrl: string;
   turnstileSiteKey?: string | null;
 };
+
+export type CheckoutReturnParams = {
+  orderToken: string;
+  checkoutStatus: string;
+  publicRef?: string | null;
+  summary?: string | null;
+  paymentId?: string | null;
+  providerTransactionId?: string | null;
+};
+
+const CHECKOUT_IDLE_GRACE_MS = 3 * 60_000;
+
+function checkoutGatewayStorageKey(botId: string): string {
+  return `desk:checkout:gateway:${botId}`;
+}
+
+function markCheckoutGatewayOpen(botId: string): void {
+  sessionStorage.setItem(checkoutGatewayStorageKey(botId), String(Date.now()));
+}
+
+function checkoutResultMessage(params: CheckoutReturnParams): string | null {
+  const ref = params.publicRef?.trim() || params.orderToken.slice(0, 8);
+  const summary = params.summary?.trim();
+  if (params.checkoutStatus === "paid") {
+    return (
+      `*Pago confirmado* — pedido *${ref}*.` +
+      (summary ? `\n\n${summary}` : "")
+    );
+  }
+  if (params.checkoutStatus === "failed" || params.checkoutStatus === "cancelled") {
+    return `No se completó el pago del pedido *${ref}*.`;
+  }
+  if (params.checkoutStatus === "awaiting_payment") {
+    return `Pedido *${ref}* registrado.` + (summary ? ` ${summary}` : "");
+  }
+  return null;
+}
+
+function threadShowsPaymentForRef(messages: ChatMsg[], publicRef: string): boolean {
+  const ref = publicRef.trim();
+  if (!ref) return false;
+  return messages.some(
+    (m) =>
+      m.role === "assistant" &&
+      m.text.includes(ref) &&
+      (m.text.includes("Pago confirmado") || m.text.includes("pago del pedido")),
+  );
+}
 
 type ChatMsg = { role: "user" | "assistant"; text: string };
 
@@ -39,6 +88,23 @@ const DESK_CHOICE_BTN =
 function storageKey(botId: string, kind: "visitor" | "conv"): string {
   return publicVisitorStorageKey(botId, kind, "chat");
 }
+
+function chatLastActiveKey(botId: string): string {
+  return `desk:chat:lastActive:${botId}`;
+}
+
+function readChatLastActiveMs(botId: string): number {
+  const raw = localStorage.getItem(chatLastActiveKey(botId));
+  if (!raw) return Date.now();
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : Date.now();
+}
+
+function writeChatLastActiveMs(botId: string, ms = Date.now()): void {
+  localStorage.setItem(chatLastActiveKey(botId), String(ms));
+}
+
+const DESK_ACTION_VERIFY_FAIL = "No pudimos validar esa acción";
 
 function AssistantBody({
   text,
@@ -281,6 +347,7 @@ export function HostedPublicChat({
   storeVisitorId = null,
   onLinkedStoreUpdated,
   registerPullLinkedStoreSync,
+  checkoutReturn = null,
 }: {
   bootstrap: PublicChatBootstrap;
   embed?: boolean;
@@ -292,6 +359,8 @@ export function HostedPublicChat({
   onLinkedStoreUpdated?: () => void;
   /** Registra sync store → chat (llamar tras cambios en el panel de la tienda). */
   registerPullLinkedStoreSync?: (sync: (() => Promise<void>) | null) => void;
+  /** Vuelta desde Wompi: reconciliar pedido y mostrar estado en el hilo. */
+  checkoutReturn?: CheckoutReturnParams | null;
 }) {
   const apiUrl = resolvePublicApiUrl(bootstrap.apiUrl);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -309,7 +378,11 @@ export function HostedPublicChat({
   const listRef = useRef<HTMLDivElement>(null);
   /** Solo hidratar historial al abrir; reanudar sesión no debe pisar mensajes optimistas. */
   const sessionHydrated = useRef(false);
+  const activeConversationIdRef = useRef<string | null>(null);
+  const idleWarnShownRef = useRef(false);
   const storeLinkTokenRef = useRef<string | null>(null);
+  const checkoutReturnHandled = useRef(false);
+  const checkoutGraceUntilRef = useRef(0);
 
   const ensureStoreCartLink = useCallback(
     async (chatConversationId: string): Promise<void> => {
@@ -372,7 +445,10 @@ export function HostedPublicChat({
   }, [bootstrap.botId, storeConversationId, storeVisitorId]);
 
   const ensureSession = useCallback(
-    async (opts?: { signal?: AbortSignal }): Promise<string> => {
+    async (opts?: {
+      signal?: AbortSignal;
+      forceHydrate?: boolean;
+    }): Promise<string> => {
       migrateStoreChatSessionSplit(bootstrap.botId);
       const convKey = storageKey(bootstrap.botId, "conv");
       let visitorId = localStorage.getItem(storageKey(bootstrap.botId, "visitor"));
@@ -381,6 +457,7 @@ export function HostedPublicChat({
         localStorage.setItem(storageKey(bootstrap.botId, "visitor"), visitorId);
       }
       const existingConv = localStorage.getItem(convKey);
+      const prevConv = activeConversationIdRef.current ?? existingConv;
       const res = await fetch(`${apiUrl}/v1/public/sessions`, {
         method: "POST",
         signal: opts?.signal,
@@ -399,6 +476,7 @@ export function HostedPublicChat({
         visitorId?: string;
         messages?: ChatMsg[];
         phase?: string;
+        isNew?: boolean;
         error?: string;
       };
       if (!res.ok || !data.conversationId) {
@@ -408,15 +486,109 @@ export function HostedPublicChat({
         localStorage.setItem(storageKey(bootstrap.botId, "visitor"), data.visitorId);
       }
       localStorage.setItem(convKey, data.conversationId);
-      if (!sessionHydrated.current) {
-        if (data.messages?.length) setMessages(data.messages);
+      const convChanged =
+        prevConv != null && data.conversationId !== prevConv;
+      const shouldHydrate =
+        opts?.forceHydrate ||
+        !sessionHydrated.current ||
+        convChanged ||
+        data.isNew === true;
+      if (shouldHydrate) {
+        setMessages(data.messages?.length ? data.messages : []);
         sessionHydrated.current = true;
+        writeChatLastActiveMs(bootstrap.botId);
+        idleWarnShownRef.current = false;
       }
+      activeConversationIdRef.current = data.conversationId;
       if (data.phase) setPhase(data.phase);
       return data.conversationId;
     },
     [apiUrl, bootstrap.botId, bootstrap.publishableKey],
   );
+
+  useEffect(() => {
+    if (!checkoutReturn?.orderToken || !ready || checkoutReturnHandled.current) {
+      return;
+    }
+    checkoutReturnHandled.current = true;
+    checkoutGraceUntilRef.current = Date.now() + CHECKOUT_IDLE_GRACE_MS;
+    sessionStorage.removeItem(checkoutGatewayStorageKey(bootstrap.botId));
+    writeChatLastActiveMs(bootstrap.botId);
+    idleWarnShownRef.current = false;
+
+    const params = checkoutReturn;
+
+    const cleanUrl = () => {
+      const u = new URL(window.location.href);
+      for (const key of [
+        "checkout_return",
+        "order",
+        "checkout_status",
+        "public_ref",
+        "summary",
+        "paymentId",
+        "id",
+      ]) {
+        u.searchParams.delete(key);
+      }
+      const qs = u.searchParams.toString();
+      window.history.replaceState({}, "", qs ? `${u.pathname}?${qs}` : u.pathname);
+    };
+
+    void (async () => {
+      try {
+        if (!isPublicOrderLookupKey(params.orderToken)) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              text: "No pudimos leer el pedido del enlace.",
+            },
+          ]);
+          return;
+        }
+
+        sessionHydrated.current = false;
+        const conversationId = await ensureSession({ forceHydrate: true });
+        const res = await fetch(
+          `${apiUrl}/v1/public/conversations/${encodeURIComponent(conversationId)}/messages`,
+          { headers: { "X-Api-Key": bootstrap.publishableKey } },
+        );
+        let nextMessages: ChatMsg[] = [];
+        if (res.ok) {
+          const data = (await res.json()) as { messages?: ChatMsg[] };
+          nextMessages = data.messages?.length ? data.messages : [];
+        }
+
+        const ref = params.publicRef?.trim() ?? "";
+        const fallback = checkoutResultMessage(params);
+        if (
+          fallback &&
+          !threadShowsPaymentForRef(nextMessages, ref) &&
+          (params.checkoutStatus === "paid" ||
+            params.checkoutStatus === "failed" ||
+            params.checkoutStatus === "cancelled" ||
+            params.checkoutStatus === "awaiting_payment")
+        ) {
+          nextMessages = [...nextMessages, { role: "assistant", text: fallback }];
+        }
+
+        setMessages(nextMessages);
+        sessionHydrated.current = true;
+        writeChatLastActiveMs(bootstrap.botId);
+      } finally {
+        cleanUrl();
+        checkoutGraceUntilRef.current = Date.now() + 60_000;
+      }
+    })();
+  }, [
+    apiUrl,
+    bootstrap.botId,
+    bootstrap.publishableKey,
+    checkoutReturn,
+    ensureSession,
+    ready,
+  ]);
 
   const pullLinkedStoreSync = useCallback(async (): Promise<void> => {
     if (!storeConversationId || !storeVisitorId || !ready) return;
@@ -506,15 +678,75 @@ export function HostedPublicChat({
     };
   }, [bootstrap.botId, ensureSession, sessionEpoch]);
 
-  function startNewConversation() {
+  const startNewConversation = useCallback(() => {
     clearPublicVisitorSession(bootstrap.botId, "chat");
+    activeConversationIdRef.current = null;
+    idleWarnShownRef.current = false;
+    writeChatLastActiveMs(bootstrap.botId);
     sessionHydrated.current = false;
     setReady(false);
     setError(null);
     setMessages([]);
     setPhase("automated");
     setSessionEpoch((n) => n + 1);
-  }
+  }, [bootstrap.botId]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const idleMs = VISITOR_SESSION_IDLE_MINUTES * 60_000;
+    const warnLeadMs = VISITOR_SESSION_IDLE_WARN_MINUTES * 60_000;
+
+    const checkIdle = () => {
+      if (document.visibilityState === "hidden" || busy) return;
+      if (checkoutGraceUntilRef.current > Date.now()) return;
+      const gatewayRaw = sessionStorage.getItem(
+        checkoutGatewayStorageKey(bootstrap.botId),
+      );
+      if (gatewayRaw) {
+        const gatewayAt = Number(gatewayRaw);
+        if (
+          Number.isFinite(gatewayAt) &&
+          Date.now() - gatewayAt < CHECKOUT_IDLE_GRACE_MS
+        ) {
+          writeChatLastActiveMs(bootstrap.botId);
+          return;
+        }
+        sessionStorage.removeItem(checkoutGatewayStorageKey(bootstrap.botId));
+      }
+      const elapsed = Date.now() - readChatLastActiveMs(bootstrap.botId);
+      if (elapsed >= idleMs) {
+        startNewConversation();
+        return;
+      }
+      if (elapsed >= idleMs - warnLeadMs && !idleWarnShownRef.current) {
+        idleWarnShownRef.current = true;
+        const warnText =
+          bootstrap.idleReplyMessage?.trim() || VISITOR_SESSION_IDLE_WARN_DEFAULT;
+        setMessages((m) => [...m, { role: "assistant", text: warnText }]);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      void ensureSession().then(checkIdle).catch(() => {});
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    const timer = window.setInterval(checkIdle, 30_000);
+    checkIdle();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(timer);
+    };
+  }, [
+    bootstrap.botId,
+    bootstrap.idleReplyMessage,
+    busy,
+    ensureSession,
+    ready,
+    sessionEpoch,
+    startNewConversation,
+  ]);
 
   useEffect(() => {
     if (listRef.current) {
@@ -534,6 +766,45 @@ export function HostedPublicChat({
   }, [bootstrap.themeCssUrl]);
 
   const turnstileSiteKey = bootstrap.turnstileSiteKey?.trim() || null;
+  const humanHeaderLabel = deskCommandDisplayLabel({ kind: "human" });
+
+  const requestHuman = useCallback(async () => {
+    if (busy || !ready) return;
+    if (phase === "needs_human" || phase === "human_active") return;
+    setBusy(true);
+    setError(null);
+    try {
+      const conversationId = await ensureSession();
+      const res = await fetch(
+        `${apiUrl}/v1/public/conversations/${conversationId}/request-human`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": bootstrap.publishableKey,
+          },
+          body: "{}",
+        },
+      );
+      if (!res.ok) {
+        setError("No pudimos conectar con un asesor. Intenta de nuevo.");
+        return;
+      }
+      const data = (await res.json()) as { phase?: string };
+      setPhase(data.phase ?? "needs_human");
+    } catch {
+      setError("No pudimos conectar con un asesor. Intenta de nuevo.");
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    apiUrl,
+    bootstrap.publishableKey,
+    busy,
+    ensureSession,
+    phase,
+    ready,
+  ]);
 
   useEffect(() => {
     if (!storeConversationId || !storeVisitorId || !ready) return;
@@ -594,7 +865,6 @@ export function HostedPublicChat({
       if (!trimmed || busy) return;
       setBusy(true);
       setError(null);
-      setMessages((m) => [...m, { role: "user", text: trimmed }]);
       try {
         let conversationId = await ensureSession();
         if (storeConversationId && storeVisitorId) {
@@ -611,6 +881,8 @@ export function HostedPublicChat({
             }
           }
         }
+        setMessages((m) => [...m, { role: "user", text: trimmed }]);
+        writeChatLastActiveMs(bootstrap.botId);
         const res = await fetch(
           `${apiUrl}/v1/public/conversations/${conversationId}/messages`,
           {
@@ -637,9 +909,15 @@ export function HostedPublicChat({
         };
         if (!res.ok) {
           const code = data.code ?? data.error ?? "message_failed";
+          if (code === "conversation_closed") {
+            startNewConversation();
+            return;
+          }
           throw new Error(code);
         }
-        if (data.checkoutUrl) {
+        const reply = data.text ?? data.assistantText ?? "…";
+        if (data.checkoutUrl && !reply.includes("Ir a pagar")) {
+          markCheckoutGatewayOpen(bootstrap.botId);
           window.location.href = data.checkoutUrl;
           return;
         }
@@ -656,8 +934,12 @@ export function HostedPublicChat({
         } else {
           setTurnstilePending(null);
         }
-        const reply = data.text ?? data.assistantText ?? "…";
+        if (deskAction && reply.includes(DESK_ACTION_VERIFY_FAIL)) {
+          startNewConversation();
+          return;
+        }
         setMessages((m) => [...m, { role: "assistant", text: reply }]);
+        writeChatLastActiveMs(bootstrap.botId);
         if (data.phase) setPhase(data.phase);
         if (storeConversationId && storeVisitorId) {
           onLinkedStoreUpdated?.();
@@ -668,7 +950,7 @@ export function HostedPublicChat({
         setBusy(false);
       }
     },
-    [apiUrl, bootstrap.publishableKey, busy, ensureSession, ensureStoreCartLink, linkedStoreBody, onLinkedStoreUpdated, storeConversationId, storeVisitorId, turnstileSiteKey],
+    [apiUrl, bootstrap.botId, bootstrap.publishableKey, busy, ensureSession, ensureStoreCartLink, linkedStoreBody, onLinkedStoreUpdated, startNewConversation, storeConversationId, storeVisitorId, turnstileSiteKey],
   );
 
   const handleOffer = useCallback(
@@ -729,7 +1011,8 @@ export function HostedPublicChat({
           return;
         }
         setTurnstilePending(null);
-        if (data.checkoutUrl) {
+        if (data.checkoutUrl && !(data.text ?? "").includes("Ir a pagar")) {
+          markCheckoutGatewayOpen(bootstrap.botId);
           window.location.href = data.checkoutUrl;
           return;
         }
@@ -787,14 +1070,26 @@ export function HostedPublicChat({
           <h1 className="min-w-0 text-base font-semibold text-[#2f3941]">
             {bootstrap.orgName}
           </h1>
-          <button
-            type="button"
-            onClick={startNewConversation}
-            disabled={!ready || busy}
-            className="shrink-0 rounded-md border border-[#d8dcde] px-2.5 py-1 text-xs text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
-          >
-            Empezar de nuevo
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {phase !== "needs_human" && phase !== "human_active" ? (
+              <button
+                type="button"
+                onClick={() => void requestHuman()}
+                disabled={!ready || busy}
+                className="rounded-md border border-[#d8dcde] px-2.5 py-1 text-xs text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
+              >
+                {humanHeaderLabel}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={startNewConversation}
+              disabled={!ready || busy}
+              className="rounded-md border border-[#d8dcde] px-2.5 py-1 text-xs text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
+            >
+              Empezar de nuevo
+            </button>
+          </div>
         </header>
       ) : null}
 
@@ -856,7 +1151,17 @@ export function HostedPublicChat({
         ) : null}
 
         {embed ? (
-          <div className="flex justify-end px-3 pt-1">
+          <div className="flex items-center justify-end gap-2 px-3 pt-1">
+            {phase !== "needs_human" && phase !== "human_active" ? (
+              <button
+                type="button"
+                onClick={() => void requestHuman()}
+                disabled={!ready || busy}
+                className="rounded px-1 py-0.5 text-[11px] text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
+              >
+                {humanHeaderLabel}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={startNewConversation}

@@ -2,6 +2,10 @@ import { DESK_UI_FENCE } from "@chatbot/chat-ui";
 import { deskCmdProduct } from "@chatbot/domain";
 import type { CatalogPriceEntry } from "./catalog-price";
 import {
+  buildFtsAndMatchQuery,
+  buildFtsOrMatchQuery,
+  COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT,
+  NATIVE_MENU_BROWSE_LIMIT,
   tokenizeCatalogSearchTerms,
   visitorCatalogSearchTerms,
 } from "./catalog-search";
@@ -125,42 +129,83 @@ export async function listPublishedProductCategories(
   return (rows.results ?? []).map((r) => r.label).filter(Boolean);
 }
 
-export async function searchPublishedProducts(
+export type PublishedProductSearchResult = {
+  rows: NativeProductRow[];
+  relaxed?: boolean;
+};
+
+async function queryPublishedByFts(
   db: D1Database,
   orgId: string,
-  query: string,
-  limit = 8,
+  matchQuery: string,
+  limit: number,
 ): Promise<NativeProductRow[]> {
-  const terms = visitorCatalogSearchTerms(query);
-  const tokens = tokenizeCatalogSearchTerms(terms);
-  const cap = Math.min(12, Math.max(1, limit));
-  if (!tokens.length) {
-    const rows = await db
-      .prepare(
-        `SELECT ${PRODUCT_SELECT}
+  if (!matchQuery.trim()) return [];
+  const sql = `SELECT ${PRODUCT_SELECT}
+       FROM products p
+       INNER JOIN products_fts fts ON fts.rowid = p.rowid
+       WHERE p.org_id = ? AND p.status = 'published' AND fts MATCH ?
+       ORDER BY p.featured DESC, p.updated_at DESC
+       LIMIT ?`;
+  const rows = await db
+    .prepare(sql)
+    .bind(orgId, matchQuery, limit)
+    .all<NativeProductRow>();
+  return (rows.results ?? []).map(normalizeProductRow);
+}
+
+async function queryPublishedBySearchTokens(
+  db: D1Database,
+  orgId: string,
+  tokens: string[],
+  limit: number,
+  match: "and" | "or",
+): Promise<NativeProductRow[]> {
+  const matchQuery =
+    match === "and" ? buildFtsAndMatchQuery(tokens) : buildFtsOrMatchQuery(tokens);
+  return queryPublishedByFts(db, orgId, matchQuery, limit);
+}
+
+export async function listPublishedProductsBrowse(
+  db: D1Database,
+  orgId: string,
+  limit = COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT,
+): Promise<NativeProductRow[]> {
+  const cap = Math.min(NATIVE_MENU_BROWSE_LIMIT, Math.max(1, limit));
+  const rows = await db
+    .prepare(
+      `SELECT ${PRODUCT_SELECT}
          FROM products WHERE org_id = ? AND status = 'published'
          ORDER BY featured DESC,
            CASE WHEN promo_label IS NOT NULL AND trim(promo_label) != '' THEN 1 ELSE 0 END DESC,
            updated_at DESC
          LIMIT ?`,
-      )
-      .bind(orgId, cap)
-      .all<NativeProductRow>();
-    return (rows.results ?? []).map(normalizeProductRow);
-  }
-  let sql = `SELECT ${PRODUCT_SELECT}
-       FROM products WHERE org_id = ? AND status = 'published'`;
-  const binds: unknown[] = [orgId];
-  for (const tok of tokens) {
-    const like = `%${tok}%`;
-    sql += ` AND (lower(name) LIKE lower(?) OR lower(description) LIKE lower(?)
-      OR lower(category) LIKE lower(?) OR lower(id) LIKE lower(?))`;
-    binds.push(like, like, like, like);
-  }
-  sql += ` ORDER BY featured DESC, updated_at DESC LIMIT ?`;
-  binds.push(cap);
-  const rows = await db.prepare(sql).bind(...binds).all<NativeProductRow>();
+    )
+    .bind(orgId, cap)
+    .all<NativeProductRow>();
   return (rows.results ?? []).map(normalizeProductRow);
+}
+
+export async function searchPublishedProducts(
+  db: D1Database,
+  orgId: string,
+  query: string,
+  limit = COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT,
+): Promise<PublishedProductSearchResult> {
+  const terms = visitorCatalogSearchTerms(query);
+  const tokens = tokenizeCatalogSearchTerms(terms);
+  const cap = Math.min(COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT, Math.max(1, limit));
+  if (!tokens.length) {
+    return { rows: await listPublishedProductsBrowse(db, orgId, cap) };
+  }
+  let rows = await queryPublishedBySearchTokens(db, orgId, tokens, cap, "and");
+  if (!rows.length && tokens.length > 1) {
+    rows = await queryPublishedBySearchTokens(db, orgId, tokens, cap, "or");
+    if (rows.length) {
+      return { rows, relaxed: true };
+    }
+  }
+  return { rows };
 }
 
 export function nativeProductToCatalogEntry(

@@ -22,12 +22,14 @@ import {
   canOpenIntegrations,
 } from "@/lib/member-access-ui";
 import { ConfiguracionIntegracionesSection } from "@/components/configuracion/integraciones-section";
+import { OrgTimezoneSelect } from "@/components/org-timezone-select";
 
 type Account = {
   user: { email: string; pendingEmail: string | null };
   org: {
     name: string;
     slug: string;
+    timezone?: string;
     deletionScheduledAt: string | null;
   } | null;
   deletionGraceDays: number;
@@ -68,6 +70,7 @@ export default function ConfiguracionPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [orgName, setOrgName] = useState("");
+  const [orgTimezone, setOrgTimezone] = useState("America/Bogota");
   const [pwdCurrent, setPwdCurrent] = useState("");
   const [pwdNew, setPwdNew] = useState("");
   const [emailNew, setEmailNew] = useState("");
@@ -81,6 +84,7 @@ export default function ConfiguracionPage() {
     const d = await api<Account>("/v1/admin/account");
     setAccount(d);
     setOrgName(d.org?.name ?? "");
+    setOrgTimezone(d.org?.timezone ?? "America/Bogota");
   }, []);
 
   useEffect(() => {
@@ -122,16 +126,19 @@ export default function ConfiguracionPage() {
     }
   }, [tab, member, router, searchParams]);
 
-  async function saveOrgName() {
+  async function saveOrgProfile() {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api("/v1/admin/account/org", {
         method: "PATCH",
-        body: JSON.stringify({ name: orgName.trim() }),
+        body: JSON.stringify({
+          name: orgName.trim(),
+          timezone: orgTimezone,
+        }),
       });
-      setMessage("Nombre actualizado.");
+      setMessage("Empresa actualizada.");
       await load();
     } catch (e) {
       setError(formatError(e));
@@ -356,13 +363,20 @@ export default function ConfiguracionPage() {
           className="w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
           disabled={busy}
         />
+        <label className="block text-xs text-[var(--muted)]">Zona horaria</label>
+        <OrgTimezoneSelect
+          value={orgTimezone}
+          onChange={setOrgTimezone}
+          disabled={busy}
+          className="w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+        />
         <button
           type="button"
           disabled={busy || orgName.trim().length < 2}
-          onClick={() => void saveOrgName()}
+          onClick={() => void saveOrgProfile()}
           className="rounded-md bg-[var(--foreground)] px-4 py-2 text-sm text-[var(--background)] disabled:opacity-50"
         >
-          Guardar nombre
+          Guardar empresa
         </button>
       </section>
 

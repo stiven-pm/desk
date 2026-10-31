@@ -4,6 +4,7 @@ import {
   commercePaymentProvidersSchema,
   hasPaymentWebhookSecret,
   parseCommerceManifest,
+  buildProductSearchText,
 } from "@chatbot/domain";
 import type { AppEnv } from "../types";
 import { apiError, json, randomId } from "../lib/http";
@@ -18,6 +19,7 @@ import {
   ensureOrgPaymentWebhookToken,
   paymentWebhookUrls,
 } from "../lib/commerce-webhook-token";
+import { reconcilePublicOrderPayment } from "../lib/commerce-public-order-reconcile";
 import { isNativeInventoryEnabled } from "../lib/native-inventory";
 import {
   catalogAssetPublicUrl,
@@ -389,10 +391,15 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
 
     const id = randomId();
     const d = parsed.data;
+    const searchText = buildProductSearchText({
+      name: d.name,
+      description: d.description ?? null,
+      category: d.category?.trim() || null,
+    });
     await c.env.DB.prepare(
       `INSERT INTO products (id, org_id, name, description, price_cents, compare_at_price_cents, promo_label,
-       currency, image_url, stock_qty, status, allows_additions, category, featured)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       currency, image_url, stock_qty, status, allows_additions, category, featured, search_text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -409,6 +416,7 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
         d.allowsAdditions ? 1 : 0,
         d.category?.trim() || null,
         d.featured ? 1 : 0,
+        searchText,
       )
       .run();
 
@@ -436,13 +444,26 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
 
     const id = c.req.param("id");
     const existing = await c.env.DB.prepare(
-      `SELECT id FROM products WHERE id = ? AND org_id = ?`,
+      `SELECT name, description, category FROM products WHERE id = ? AND org_id = ?`,
     )
       .bind(id, auth.user.orgId)
-      .first();
+      .first<{
+        name: string;
+        description: string | null;
+        category: string | null;
+      }>();
     if (!existing) return apiError("not_found", 404);
 
     const d = parsed.data;
+    const merged = {
+      name: d.name ?? existing.name,
+      description:
+        d.description !== undefined ? d.description : existing.description,
+      category:
+        d.category !== undefined
+          ? d.category?.trim() || null
+          : existing.category,
+    };
     const fields: string[] = [];
     const values: unknown[] = [];
     if (d.name != null) {
@@ -492,6 +513,14 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
     if (d.featured !== undefined) {
       fields.push("featured = ?");
       values.push(d.featured ? 1 : 0);
+    }
+    if (
+      d.name != null ||
+      d.description !== undefined ||
+      d.category !== undefined
+    ) {
+      fields.push("search_text = ?");
+      values.push(buildProductSearchText(merged));
     }
     if (!fields.length) return json({ ok: true });
 
@@ -564,12 +593,46 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
     return json({ orders: rows.results ?? [] });
   });
 
+  app.post("/v1/admin/sales-orders/:id/sync-payment", async (c) => {
+    const auth = await requireAdminRole(c.req.raw, c.env, ["owner", "admin"]);
+    if ("response" in auth) return auth.response;
+
+    const orderId = c.req.param("id").trim();
+    const row = await c.env.DB.prepare(
+      `SELECT id, org_id, conversation_id, public_ref, status, lines_json
+       FROM sales_orders WHERE id = ? AND org_id = ?`,
+    )
+      .bind(orderId, auth.user.orgId)
+      .first<{
+        id: string;
+        org_id: string;
+        conversation_id: string;
+        public_ref: string | null;
+        status: string;
+        lines_json: string;
+      }>();
+    if (!row) return apiError("not_found", 404);
+
+    const result = await reconcilePublicOrderPayment(c.env, row, {});
+    const fresh = await c.env.DB.prepare(
+      `SELECT status FROM sales_orders WHERE id = ? AND org_id = ?`,
+    )
+      .bind(orderId, auth.user.orgId)
+      .first<{ status: string }>();
+
+    return json({
+      ok: result.ok,
+      code: result.code,
+      status: fresh?.status ?? row.status,
+    });
+  });
+
   app.post("/v1/admin/sales-orders/:id/confirm-payment", async (c) => {
     return apiError(
-      "manual_payment_removed",
+      "use_sync_payment",
       410,
       undefined,
-      "Desk ya no confirma pagos manualmente. Usa pasarela y webhooks.",
+      "Usa POST /v1/admin/sales-orders/:id/sync-payment para reconciliar con la pasarela.",
     );
   });
 
@@ -787,9 +850,13 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
     let created = 0;
     for (const item of payload.items ?? []) {
       const id = randomId();
+      const searchText = buildProductSearchText({
+        name: item.name.slice(0, 200),
+        description: item.description?.slice(0, 4000) ?? null,
+      });
       await c.env.DB.prepare(
-        `INSERT INTO products (id, org_id, name, description, price_cents, currency, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+        `INSERT INTO products (id, org_id, name, description, price_cents, currency, status, search_text)
+         VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)`,
       )
         .bind(
           id,
@@ -798,6 +865,7 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
           item.description?.slice(0, 4000) ?? null,
           item.priceCents,
           currency,
+          searchText,
         )
         .run();
       created += 1;

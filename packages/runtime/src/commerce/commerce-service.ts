@@ -17,6 +17,7 @@ import {
   searchPublishedProducts,
   type NativeProductRow,
 } from "./native-catalog";
+import { COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT } from "./catalog-search";
 import {
   cartFingerprint,
   rebuildCartFromCatalog,
@@ -98,6 +99,12 @@ export type CommerceServiceDeps = {
   checkoutEnv?: string;
   /** Chat DO linked to a hosted store session: cart/buyer/checkout go to the store DO. */
   linkedStore?: LinkedStoreCommerceProxy;
+};
+
+export type CommerceCatalogSearchResult = {
+  products: NativeProductRow[];
+  noMatch?: boolean;
+  relaxed?: boolean;
 };
 
 export class CommerceService {
@@ -438,19 +445,39 @@ export class CommerceService {
     return { orderId: row.id, conversationId: row.conversation_id };
   }
 
-  async searchProducts(query: string): Promise<NativeProductRow[]> {
-    if (!this.deps.db) return [];
-    const external = await this.searchExternalCatalog(query);
-    if (external) return external;
-    const rows = await searchPublishedProducts(
+  async searchProducts(args: {
+    integrationQuery: string;
+    nativeQuery: string;
+    limit?: number;
+  }): Promise<CommerceCatalogSearchResult> {
+    if (!this.deps.db) return { products: [] };
+    const limit = Math.min(
+      COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT,
+      Math.max(1, args.limit ?? COMMERCE_SEARCH_TOOL_DEFAULT_LIMIT),
+    );
+    const integrationQ = args.integrationQuery.trim();
+    const external = await this.searchExternalCatalog(integrationQ, limit);
+    if (external) {
+      const noMatch =
+        integrationQ.length > 0 && external.length === 0;
+      return { products: external, ...(noMatch ? { noMatch: true } : {}) };
+    }
+    const { rows, relaxed } = await searchPublishedProducts(
       this.deps.db,
       this.deps.orgId,
-      query,
+      args.nativeQuery,
+      limit,
     );
     for (const row of rows) {
       this.recordCatalogPrices([nativeProductToCatalogEntry(row)]);
     }
-    return rows;
+    const nativeTerms = args.nativeQuery.trim();
+    const noMatch = nativeTerms.length > 0 && rows.length === 0;
+    return {
+      products: rows,
+      ...(noMatch ? { noMatch: true } : {}),
+      ...(relaxed ? { relaxed: true } : {}),
+    };
   }
 
   async getProductDetails(productId: string): Promise<NativeProductRow | null> {
@@ -504,6 +531,7 @@ export class CommerceService {
 
   private async searchExternalCatalog(
     query: string,
+    limit: number,
   ): Promise<NativeProductRow[] | null> {
     if (!this.deps.db) return null;
     const bundle = await loadOrgCommerceCatalogBundle(
@@ -515,7 +543,7 @@ export class CommerceService {
     const result = await executeIntegrationCapability(
       bundle,
       "catalog.search",
-      { query, limit: "12" },
+      { query, limit: String(limit) },
     );
     if (!result.ok) return null;
     const op = findOperation(bundle, "catalog.search");
@@ -1186,6 +1214,13 @@ export class CommerceService {
         .run();
     }
     await this.trackCommerceEvent("payment." + status, { paymentId });
+  }
+
+  async recordCatalogSearchTelemetry(
+    kind: "degraded" | "no_match" | "relaxed",
+    meta: Record<string, unknown>,
+  ): Promise<void> {
+    await this.trackCommerceEvent(`catalog.search.${kind}`, meta);
   }
 
   private async trackCommerceEvent(

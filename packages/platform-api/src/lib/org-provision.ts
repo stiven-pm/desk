@@ -3,7 +3,7 @@ import { randomId, periodStartIso } from "./http";
 import { generateApiKey } from "./keys";
 import { persistDefaultApiKeys } from "../routes/auth";
 import { createMemberInvite, type MemberRole } from "./invites";
-import { planFromSlug, type PlanSlug } from "@chatbot/domain";
+import { planFromSlug, type PlanSlug, resolveOrgTimezone } from "@chatbot/domain";
 import { ensureDeskHostedOrigin } from "./bot-origins";
 
 function slugify(name: string): string {
@@ -23,6 +23,7 @@ export async function provisionOrganization(
     status?: "invited" | "active" | "pending";
     adminRole?: MemberRole;
     invitedByUserId?: string;
+    timezone?: string;
   },
 ): Promise<{
   orgId: string;
@@ -35,15 +36,16 @@ export async function provisionOrganization(
   const period = periodStartIso();
   const plan = planFromSlug(params.planSlug ?? "starter");
   const status = params.status ?? "invited";
+  const orgTimezone = resolveOrgTimezone(params.timezone);
   const botId = randomId();
   const pub = generateApiKey("publishable");
   const sec = generateApiKey("secret");
 
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO orgs (id, name, slug, plan_slug, status, period_start)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).bind(orgId, params.name, slug, plan, status, period),
+      `INSERT INTO orgs (id, name, slug, plan_slug, status, period_start, timezone)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(orgId, params.name, slug, plan, status, period, orgTimezone),
     env.DB.prepare(
       `INSERT INTO usage_counters (org_id, period_start) VALUES (?, ?)`,
     ).bind(orgId, period),

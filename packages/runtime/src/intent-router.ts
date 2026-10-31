@@ -1,7 +1,8 @@
 import { isSmallTalkMessage } from "./integrations/tool-rank";
 
-/** Intención mínima — sin regex de catálogo/compra/FAQ en el visitante. */
-export type VisitorTurnIntent = "small_talk" | "general";
+import type { VisitorTurnIntent } from "@chatbot/domain";
+
+export type { VisitorTurnIntent };
 
 export function classifyVisitorTurn(text: string): VisitorTurnIntent {
   const trimmed = text.trim();

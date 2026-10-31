@@ -3,6 +3,9 @@ export const DESK_CMD_CART = "__desk:cart__";
 export const DESK_CMD_PAY = "__desk:pay__";
 export const DESK_CMD_CONSENT = "__desk:consent__";
 export const DESK_CMD_CONFIRM_PRICE = "__desk:confirm_price__";
+export const DESK_CMD_HUMAN = "__desk:human__";
+export const DESK_CMD_OFFER_ACCEPT = "__desk:offer_accept__";
+export const DESK_CMD_OFFER_DECLINE = "__desk:offer_decline__";
 
 export function deskCmdProduct(productId: string): string {
   return `__desk:product:${productId}__`;

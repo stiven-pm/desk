@@ -8,12 +8,13 @@ La IA corre en **Workers AI** (binding `AI` en el Worker). Se factura en tu cuen
 
 | Uso | Variable | Default |
 |-----|----------|---------|
-| Chat / razonamiento | `WORKERS_AI_CHAT_MODEL` | `@cf/deepseek-ai/deepseek-v4-flash-0731` |
+| Chat / razonamiento | `WORKERS_AI_CHAT_MODEL` | `@cf/zai-org/glm-5.3-flash` |
 | Embeddings (RAG) | `WORKERS_AI_EMBEDDING_MODEL` | `@cf/baai/bge-m3` |
 | Dimensión Vectorize | `EMBEDDING_DIMENSIONS` | `1024` (BGE-M3) |
 
 Alternativas (solo cambia la var en `.env` y redeploy), por ejemplo:
 
+- `@cf/deepseek-ai/deepseek-v4.1-flash-1017` — alternativa DeepSeek
 - `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` — más razonador, más lento/caro en neurona
 - `@cf/qwen/qwq-32b` — razonamiento
 - `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — contexto amplio
@@ -23,7 +24,7 @@ Alternativas (solo cambia la var en `.env` y redeploy), por ejemplo:
 
 ```text
 PDF → R2 → cola → BGE-M3 (ingesta) → Vectorize
-Chat → WebSocket → ConversationDO → BGE-M3 (query) → Vectorize → DeepSeek V4 Flash → stream al cliente
+Chat → WebSocket → ConversationDO → BGE-M3 (query) → Vectorize → GLM-5.3-Flash → stream al cliente
 ```
 
 - **Durable Object**: conversación + llamadas a Workers AI.
@@ -43,10 +44,12 @@ No hace falta `LLM_API_KEY` en secrets. Solo:
 npm run desk:deploy:test
 ```
 
+El runtime envía `reasoning_effort: low` en GLM-5.3-Flash (el default del modelo en CF es `max`).
+
 Opcional en `.env.test` / producción para override de modelos:
 
 ```bash
-WORKERS_AI_CHAT_MODEL=@cf/deepseek-ai/deepseek-v4-flash-0731
+WORKERS_AI_CHAT_MODEL=@cf/zai-org/glm-5.3-flash
 WORKERS_AI_EMBEDDING_MODEL=@cf/baai/bge-m3
 EMBEDDING_DIMENSIONS=1024
 ```

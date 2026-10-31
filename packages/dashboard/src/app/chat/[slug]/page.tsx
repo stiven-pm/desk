@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   HostedPublicChat,
+  type CheckoutReturnParams,
   type PublicChatBootstrap,
 } from "@/components/hosted-public-chat";
 import { resolvePublicApiUrl } from "@/lib/config";
@@ -13,9 +14,28 @@ function HostedChatPageInner() {
   const searchParams = useSearchParams();
   const slug = String(params.slug ?? "").trim();
   const embed = searchParams.get("embed") === "1";
-
+  const [checkoutReturn, setCheckoutReturn] = useState<CheckoutReturnParams | null>(
+    null,
+  );
   const [bootstrap, setBootstrap] = useState<PublicChatBootstrap | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const readCheckoutReturn = (sp: URLSearchParams): CheckoutReturnParams | null => {
+      if (sp.get("checkout_return") !== "1") return null;
+      const orderToken = sp.get("order")?.trim();
+      if (!orderToken) return null;
+      return {
+        orderToken,
+        checkoutStatus: sp.get("checkout_status")?.trim() || "awaiting_payment",
+        publicRef: sp.get("public_ref"),
+        summary: sp.get("summary"),
+        paymentId: sp.get("paymentId"),
+        providerTransactionId: sp.get("id"),
+      };
+    };
+    setCheckoutReturn(readCheckoutReturn(new URLSearchParams(window.location.search)));
+  }, [searchParams]);
 
   useEffect(() => {
     if (!slug) {
@@ -58,7 +78,11 @@ function HostedChatPageInner() {
 
   return (
     <div className="h-[100dvh] overflow-hidden">
-      <HostedPublicChat bootstrap={bootstrap} embed={embed} />
+      <HostedPublicChat
+        bootstrap={bootstrap}
+        embed={embed}
+        checkoutReturn={checkoutReturn}
+      />
     </div>
   );
 }

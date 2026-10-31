@@ -1,7 +1,6 @@
 import { DESK_UI_FENCE } from "@chatbot/chat-ui";
 import type { CommerceCart } from "@chatbot/domain";
 import {
-  COMMERCE_VISITOR_LABEL,
   DESK_CMD_CART,
   DESK_CMD_CONFIRM_PRICE,
   DESK_CMD_CONSENT,
@@ -61,7 +60,17 @@ export function appendCartDeskUiFence(text: string, cart: CommerceCart): string 
   return text.trimEnd() + fence;
 }
 
-function deskUiFence(blocks: Record<string, unknown>[]): string {
+export function appendCheckoutPaymentDeskUi(
+  text: string,
+  checkoutUrl: string,
+): string {
+  const url = checkoutUrl.trim();
+  if (!url.startsWith("https://")) return text;
+  const html = `<p><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ir a pagar</a></p>`;
+  return text.trimEnd() + deskUiFence([{ type: "html", html }]);
+}
+
+export function deskUiFence(blocks: Record<string, unknown>[]): string {
   return `\n\`\`\`${DESK_UI_FENCE}\n${JSON.stringify({ blocks })}\n\`\`\``;
 }
 
@@ -73,11 +82,11 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Imagen + descripción; acciones solo en bloque choices. */
+/** Imagen + descripción; acciones vía resolveVisitorActions (turnKind product_detail). */
 export function buildProductDetailDeskUi(
   row: NativeProductRow,
-  cart?: CommerceCart | null,
-  stockNote?: string | null,
+  _cart?: CommerceCart | null,
+  _stockNote?: string | null,
 ): string {
   const price = formatMoneyCents(row.price_cents, row.currency);
   const compare =
@@ -104,24 +113,15 @@ export function buildProductDetailDeskUi(
   if (row.promo_label?.trim()) {
     parts.push(`<p>${escapeHtml(row.promo_label.trim())}</p>`);
   }
-  const choiceItems: Array<{ label: string; message: string }> = [
-    { label: COMMERCE_VISITOR_LABEL.addToCart, message: deskCmdAdd(row.id) },
-  ];
-  if (cart?.lines.length) {
-    choiceItems.push({
-      label: COMMERCE_VISITOR_LABEL.cart,
-      message: DESK_CMD_CART,
-    });
-  }
-  choiceItems.push({
-    label: COMMERCE_VISITOR_LABEL.viewProductsFromDetail,
-    message: DESK_CMD_MENU,
-  });
-  const choices = {
-    type: "choices",
-    items: choiceItems,
-  };
-  return deskUiFence([{ type: "html", html: parts.join("") }, choices]);
+  return deskUiFence([{ type: "html", html: parts.join("") }]);
+}
+
+/** @deprecated Post-cart choices vienen de resolveVisitorActions; conservado para tests legacy. */
+export type PostCartChoicesKind = "default" | "cart_view" | "empty";
+
+/** Prosa fija antes de pago; botón Acepto vía turnKind buyer_consent. */
+export function buildBuyerConsentLead(): string {
+  return NATIVE_COMMERCE_LEAD.consentBeforePay;
 }
 
 /** Tras elegir producto: el visitante responde con un número en el chat. */
@@ -145,41 +145,3 @@ export function buildNoStockToAddReply(row: NativeProductRow): string {
   return `No queda stock disponible para añadir más ${chatCatalogTitle(row)}. Revisa tu carrito o el menú.`;
 }
 
-export type PostCartChoicesKind = "default" | "cart_view" | "empty";
-
-function postCartChoiceItems(
-  cart: CommerceCart,
-  kind: PostCartChoicesKind,
-): Array<{ label: string; message: string }> {
-  if (kind === "empty" || !cart.lines.length) {
-    return [{ label: COMMERCE_VISITOR_LABEL.menu, message: DESK_CMD_MENU }];
-  }
-  const items: Array<{ label: string; message: string }> = [
-    { label: COMMERCE_VISITOR_LABEL.pay, message: DESK_CMD_PAY },
-  ];
-  if (kind !== "cart_view") {
-    items.push({ label: COMMERCE_VISITOR_LABEL.cart, message: DESK_CMD_CART });
-  }
-  items.push({ label: COMMERCE_VISITOR_LABEL.menu, message: DESK_CMD_MENU });
-  return items;
-}
-
-export function appendPostCartChoicesDeskUi(
-  text: string,
-  cart: CommerceCart,
-  kind: PostCartChoicesKind = "default",
-): string {
-  const items = postCartChoiceItems(cart, kind);
-  if (text.includes('"type":"choices"') || text.includes('"type": "choices"')) {
-    return text;
-  }
-  return text.trimEnd() + deskUiFence([{ type: "choices", items }]);
-}
-
-export function buildBuyerConsentDeskUi(): string {
-  const choices = {
-    type: "choices",
-    items: [{ label: COMMERCE_VISITOR_LABEL.consent, message: DESK_CMD_CONSENT }],
-  };
-  return `${NATIVE_COMMERCE_LEAD.consentBeforePay}${deskUiFence([choices])}`;
-}

@@ -26,6 +26,7 @@ type Analytics = {
     clientMessagesThisMonth?: number;
   };
   conversationsByDay: Array<{ day: string; conversations: number }>;
+  reportingTimezone?: string;
 };
 
 function pct(used: number, max: number) {
@@ -147,6 +148,11 @@ export default function AnalyticsPage() {
       {data.conversationsByDay.length > 0 && (
         <section className="mt-10">
           <h2 className="font-medium">Conversaciones por día</h2>
+          {data.reportingTimezone ? (
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Días calendario en {data.reportingTimezone.replace(/_/g, " ")}
+            </p>
+          ) : null}
           <ul className="mt-4 space-y-2">
             {data.conversationsByDay.map((row) => (
               <li key={row.day} className="flex items-center gap-3">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ORG_TIMEZONE_OPTIONS, formatOrgTimezoneLabel } from "@chatbot/domain";
 import { OpsShell } from "@/components/ops-shell";
 import { opsApi } from "@/lib/api";
 import { humanizeApiError } from "@/lib/errors";
@@ -25,6 +26,7 @@ export default function OpsOrgsPage() {
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [name, setName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
+  const [timezone, setTimezone] = useState("America/Bogota");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +57,7 @@ export default function OpsOrgsPage() {
     try {
       const data = await opsApi<{ inviteUrl: string }>("/v1/ops/orgs", {
         method: "POST",
-        body: JSON.stringify({ name, adminEmail, status: "invited" }),
+        body: JSON.stringify({ name, adminEmail, status: "invited", timezone }),
       });
       setInviteUrl(data.inviteUrl);
       const list = await opsApi<{ orgs: Org[] }>("/v1/ops/orgs");
@@ -86,7 +88,7 @@ export default function OpsOrgsPage() {
         </p>
         <form
           onSubmit={createOrg}
-          className="mt-6 grid gap-3 rounded-[var(--ops-radius)] border border-[var(--ops-border)] bg-white p-4 md:grid-cols-3"
+          className="mt-6 grid gap-3 rounded-[var(--ops-radius)] border border-[var(--ops-border)] bg-white p-4 md:grid-cols-4"
         >
           <input
             className="rounded-[var(--ops-radius)] border border-[var(--ops-border)] px-3 py-2 text-sm"
@@ -103,6 +105,17 @@ export default function OpsOrgsPage() {
             onChange={(e) => setAdminEmail(e.target.value)}
             required
           />
+          <select
+            className="rounded-[var(--ops-radius)] border border-[var(--ops-border)] px-3 py-2 text-sm"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+          >
+            {ORG_TIMEZONE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             className="rounded-[var(--ops-radius)] px-4 py-2 text-sm font-medium text-[var(--ops-ink)]"

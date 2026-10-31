@@ -1,9 +1,17 @@
 import { z } from "zod";
+import { isAllowedOrgTimezone } from "./org-timezone";
+
+export const orgTimezoneSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .refine(isAllowedOrgTimezone, { message: "invalid_timezone" });
 
 export const registerBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(10).max(128),
   orgName: z.string().min(2).max(120),
+  timezone: orgTimezoneSchema.optional(),
 });
 
 export const loginBodySchema = z.object({

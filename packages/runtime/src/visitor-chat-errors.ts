@@ -13,13 +13,17 @@ export const VISITOR_CHAT_TIMEOUT =
 export const VISITOR_CHAT_TOOLS_FAILED =
   "No pude completar la consulta con la información del negocio. ¿Quieres que te pase con alguien del equipo?";
 
+/** Fallo del LLM en commerce: sin inventar catálogo; el runtime adjunta botones de estado. */
+export const VISITOR_CHAT_RESCUE_HONEST =
+  "Tuve un problema técnico en este momento. ¿Qué prefieres hacer?";
+
 /** Solo cuando el modelo no respondió tras reintentos (fallo real de servicio). */
 export function visitorMessageForLlmFailure(
   reason: "not_configured" | "http_error" | "timeout" | "empty_response",
   opts?: { commerceToolsActive?: boolean },
 ): string {
   if (reason === "timeout") return VISITOR_CHAT_TIMEOUT;
-  if (opts?.commerceToolsActive) return VISITOR_CHAT_TOOLS_FAILED;
+  if (opts?.commerceToolsActive) return VISITOR_CHAT_RESCUE_HONEST;
   return VISITOR_CHAT_UNAVAILABLE;
 }
 

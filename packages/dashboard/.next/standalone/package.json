@@ -13,7 +13,7 @@
     "dev": "npx concurrently -k \"npm run dev:api\" \"npm run dev:dashboard\"",
     "build": "npm run build -w @chatbot/domain && npm run build -w @chatbot/runtime && npm run build -w @chatbot/platform-api && npm run build -w @chatbot/widget",
     "typecheck": "npm run typecheck -w @chatbot/domain && npm run typecheck -w @chatbot/runtime && npm run typecheck -w @chatbot/platform-api && npm run typecheck -w @chatbot/dashboard && npm run typecheck -w @chatbot/ops-dashboard && npm run typecheck -w @chatbot/widget",
-    "test": "npm run test -w @chatbot/domain && npm run test -w @chatbot/platform-api",
+    "test": "npm run test -w @chatbot/domain && npm run test -w @chatbot/runtime && npm run test -w @chatbot/platform-api",
     "desk:env:pull": "bash scripts/sync-env-from-flatbase.sh",
     "desk:secrets:test": "bash infra/cloudflare/sync-secrets.sh test",
     "desk:secrets:prod": "bash infra/cloudflare/sync-secrets.sh production",

@@ -1,7 +1,7 @@
 {
   "/_not-found/page": "/_not-found",
-  "/orgs/[orgId]/page": "/orgs/[orgId]",
   "/metrics/page": "/metrics",
-  "/page": "/",
-  "/orgs/page": "/orgs"
+  "/orgs/page": "/orgs",
+  "/orgs/[orgId]/page": "/orgs/[orgId]",
+  "/page": "/"
 }

@@ -60,6 +60,10 @@ d1_migrate() {
 
 if [[ "$TARGET" == "test" ]]; then
   d1_migrate desk-control-test test
+  echo "prepare-deploy: backfill products.search_text (test)"
+  npx tsx "$ROOT/scripts/backfill-product-search-text.ts" --remote --test
 else
   d1_migrate desk-control ""
+  echo "prepare-deploy: backfill products.search_text (production)"
+  npx tsx "$ROOT/scripts/backfill-product-search-text.ts" --remote
 fi

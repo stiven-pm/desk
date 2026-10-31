@@ -145,6 +145,8 @@ export function registerWebhookRoutes(app: Hono<AppEnv>): void {
       body,
       {
         bearerToken: c.req.header("authorization"),
+        body,
+        eventChecksumHeader: c.req.header("x-event-checksum"),
       },
     );
 

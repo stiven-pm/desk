@@ -9,6 +9,14 @@ import {
   transitionPhase,
   isRawDeskCommand,
   verifyDeskAction,
+  deskCommandDisplayLabel,
+  deskCommandToInternal,
+  parseInternalDeskCommand,
+  META_VISITOR_STRUGGLE_COUNT,
+  parseStruggleCount,
+  serializePendingPrompt,
+  type VisitorStateBarChoice,
+  type VisitorTurnKind,
 } from "@chatbot/domain";
 import {
   RAG_CHUNK_MAX_CHARS,
@@ -30,7 +38,6 @@ import { loadBotAgentTools } from "./integrations/load-tools";
 import { validateAssistantMessage } from "@chatbot/chat-ui/validate";
 import {
   isHandoffGiveUpIntent,
-  isHumanHandoffIntent,
 } from "./human-handoff-intent";
 import {
   formatVisitorSessionForPrompt,
@@ -48,18 +55,26 @@ import {
 } from "./harness/conversation-compact";
 import { isCatalogHttpTool } from "./commerce/catalog-price";
 import { CommerceService } from "./commerce/commerce-service";
+import { RAG_CATALOG_BROWSE_HINT_LIMIT } from "./commerce/catalog-search";
 import {
   countPublishedProducts,
   getPublishedProduct,
   nativeProductToCatalogEntry,
   formatNativeCatalogPromptSection,
+  listPublishedProductsBrowse,
   orgHasPublishedProducts,
-  searchPublishedProducts,
 } from "./commerce/native-catalog";
 import { handleCommerceDoRequest } from "./commerce/do-handlers";
 import { appendCartDeskUiFence } from "./commerce/commerce-ui";
 import { tryNativeCommerceTurn } from "./commerce/native-commerce-turn";
+import {
+  resolvePendingPromptBeforeTurn,
+  resolvePendingPromptFromDeskOffer,
+  clearPendingPrompt,
+  PENDING_PROMPT_META_KEY,
+} from "./pending-prompt-turn";
 import { signDeskUiInAssistantText } from "./commerce/desk-action-ui";
+import { applyVisitorAssistantActionHarness } from "./commerce/visitor-assistant-harness";
 import {
   formatCartForPrompt,
   parseCart,
@@ -326,6 +341,55 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     return turns.slice(-20);
   }
 
+  private getStruggleCount(): number {
+    return parseStruggleCount(this.getMeta(META_VISITOR_STRUGGLE_COUNT));
+  }
+
+  private bumpStruggleCount(delta = 1): void {
+    this.setMeta(
+      META_VISITOR_STRUGGLE_COUNT,
+      String(this.getStruggleCount() + delta),
+    );
+  }
+
+  private clearStruggleCount(): void {
+    this.setMeta(META_VISITOR_STRUGGLE_COUNT, "");
+  }
+
+  private async visitorAssistantWithHarness(
+    text: string,
+    opts?: {
+      extraChoices?: VisitorStateBarChoice[];
+      turnKind?: VisitorTurnKind;
+      actionProductId?: string;
+      harnessExtraChoices?: VisitorStateBarChoice[];
+      recordStruggle?: boolean;
+    },
+  ): Promise<string> {
+    if (opts?.recordStruggle) this.bumpStruggleCount();
+    const convId = this.getMeta("conversation_id") ?? "";
+    const secret = this.env.ENCRYPTION_KEY ?? "";
+    let body = text;
+    if (this.env.DB) {
+      const hasCatalog = await orgHasPublishedProducts(this.env.DB, this.orgId);
+      const svc = this.commerceService();
+      const cart = this.cartForUi(svc);
+      const cartLineCount = cart.lines.reduce((n, l) => n + l.quantity, 0);
+      body = applyVisitorAssistantActionHarness({
+        text: body,
+        phase: this.phase,
+        cartLineCount,
+        hasPublishedCatalog: hasCatalog,
+        turnKind: opts?.turnKind,
+        actionProductId: opts?.actionProductId,
+        extraChoices: opts?.extraChoices,
+        harnessExtraChoices: opts?.harnessExtraChoices,
+        struggleCount: this.getStruggleCount(),
+      });
+    }
+    return signDeskUiInAssistantText(body, convId, secret);
+  }
+
   async handleUserMessage(
     text: string,
     handlers?: MessageHandlers,
@@ -352,11 +416,80 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       }
       commandText = verified.commandText;
       displayText = verified.displayLabel;
+
+      if (
+        verified.cmd.kind === "offer_accept" ||
+        verified.cmd.kind === "offer_decline"
+      ) {
+        const offerResolution = resolvePendingPromptFromDeskOffer(
+          verified.cmd.kind,
+          (key) => this.getMeta(key),
+          (key, value) => this.setMeta(key, value),
+        );
+        if (offerResolution.type === "missing_pending") {
+          const reply = "Esa oferta ya no está activa. Escríbeme si necesitas algo.";
+          await this.appendMessage("user", displayText);
+          await this.appendMessage("assistant", reply);
+          return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+        }
+        if (offerResolution.type === "decline") {
+          await this.appendMessage("user", displayText);
+          this.bumpStruggleCount();
+          const assistantText = await this.visitorAssistantWithHarness(
+            offerResolution.replyText,
+            { turnKind: "faq" },
+          );
+          await this.appendMessage("assistant", assistantText);
+          this.setMeta("phase", this.phase);
+          this.touchActivity();
+          return {
+            assistantText,
+            phase: this.phase,
+            creditsEstimate: 0,
+          };
+        }
+        if (offerResolution.type === "use_signed_action") {
+          await this.appendMessage("user", displayText);
+          const cmd = parseInternalDeskCommand(offerResolution.deskCommand);
+          const label = cmd
+            ? deskCommandDisplayLabel(cmd)
+            : "Continuar";
+          const assistantText = await this.visitorAssistantWithHarness("", {
+            extraChoices: [
+              { label, message: offerResolution.deskCommand },
+            ],
+          });
+          await this.appendMessage("assistant", assistantText);
+          this.setMeta("phase", this.phase);
+          this.touchActivity();
+          return {
+            assistantText,
+            phase: this.phase,
+            creditsEstimate: 0,
+          };
+        }
+        if (offerResolution.type === "accept") {
+          commandText = offerResolution.deskCommand;
+          displayText = deskCommandDisplayLabel(
+            parseInternalDeskCommand(offerResolution.deskCommand) ?? {
+              kind: "menu",
+            },
+          );
+        }
+      } else {
+        clearPendingPrompt((key, value) => this.setMeta(key, value));
+      }
     } else if (isRawDeskCommand(text)) {
-      await this.appendMessage("user", displayText.slice(0, 120));
-      const reply = "Usa los botones del chat para continuar.";
-      await this.appendMessage("assistant", reply);
-      return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+      const rawCmd = parseInternalDeskCommand(text);
+      if (rawCmd?.kind === "human") {
+        commandText = deskCommandToInternal(rawCmd);
+        displayText = deskCommandDisplayLabel(rawCmd);
+      } else {
+        await this.appendMessage("user", displayText.slice(0, 120));
+        const reply = "Usa los botones del chat para continuar.";
+        await this.appendMessage("assistant", reply);
+        return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+      }
     }
 
     await this.appendMessage("user", displayText);
@@ -365,13 +498,74 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       type: "user_message",
       text: displayText,
     });
-    const channel = this.getMeta("delivery_channel") ?? "web";
-    const wantsHuman =
-      isHumanHandoffIntent(commandText) ||
-      (this.phase === "handoff_triage" && isHandoffGiveUpIntent(commandText));
-    if (wantsHuman) {
-      this.phase = transitionPhase(this.phase, { type: "request_human" });
+
+    const deskCmd = parseInternalDeskCommand(commandText);
+    if (deskCmd?.kind === "human") {
+      this.phase = "needs_human";
+      this.setMeta("phase", this.phase);
+      await this.ensureHumanQueueRow();
+      const reply = HANDOFF_REPLY;
+      await this.appendMessage("assistant", reply);
+      this.touchActivity();
+      return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
     }
+
+    if (
+      this.phase === "handoff_triage" &&
+      isHandoffGiveUpIntent(commandText)
+    ) {
+      this.phase = transitionPhase(this.phase, { type: "request_human" });
+      this.setMeta("phase", this.phase);
+    }
+
+    const pendingResolution = await resolvePendingPromptBeforeTurn({
+      env: this.env,
+      userMessage: displayText,
+      getMeta: (key) => this.getMeta(key),
+      setMeta: (key, value) => this.setMeta(key, value),
+    });
+    if (pendingResolution.type === "decline") {
+      this.bumpStruggleCount();
+      const assistantText = await this.visitorAssistantWithHarness(
+        pendingResolution.replyText,
+        { turnKind: "faq" },
+      );
+      await this.appendMessage("assistant", assistantText);
+      this.setMeta("phase", this.phase);
+      this.touchActivity();
+      return {
+        assistantText,
+        phase: this.phase,
+        creditsEstimate: 0,
+      };
+    }
+    if (pendingResolution.type === "use_signed_action") {
+      const cmd = parseInternalDeskCommand(pendingResolution.deskCommand);
+      const label = cmd
+        ? deskCommandDisplayLabel(cmd)
+        : "Continuar";
+      const assistantText = await this.visitorAssistantWithHarness(
+        pendingResolution.replyText,
+        {
+          extraChoices: [
+            { label, message: pendingResolution.deskCommand },
+          ],
+        },
+      );
+      await this.appendMessage("assistant", assistantText);
+      this.setMeta("phase", this.phase);
+      this.touchActivity();
+      return {
+        assistantText,
+        phase: this.phase,
+        creditsEstimate: 0,
+      };
+    }
+    if (pendingResolution.type === "accept") {
+      commandText = pendingResolution.deskCommand;
+    }
+
+    const channel = this.getMeta("delivery_channel") ?? "web";
 
     const storeConvId = this.getMeta(META_LINKED_STORE_CONVERSATION)?.trim();
     const fetchLinkedStoreCart =
@@ -418,11 +612,20 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           phase: this.phase,
           handler: "native",
         });
-        const assistantText = await signDeskUiInAssistantText(
+        const assistantText = await this.visitorAssistantWithHarness(
           native.assistantText,
-          convId,
-          secret,
+          {
+            turnKind: native.turnKind,
+            actionProductId: native.actionProductId,
+            harnessExtraChoices: native.harnessExtraChoices,
+          },
         );
+        if (
+          native.turnKind === "cart_updated" ||
+          native.turnKind === "browse_catalog"
+        ) {
+          this.clearStruggleCount();
+        }
         await this.appendMessage("assistant", assistantText);
         this.setMeta("phase", this.phase);
         this.touchActivity();
@@ -490,12 +693,18 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     let assistantText = svcForUi
       ? appendCartDeskUiFence(assistantBody, this.cartForUi(svcForUi))
       : assistantBody;
-    const signedAssistantText = await signDeskUiInAssistantText(
-      assistantText,
-      convId,
-      secret,
-    );
-    assistantText = signedAssistantText;
+    assistantText = await this.visitorAssistantWithHarness(assistantText, {
+      turnKind:
+        reply.turnKind ??
+        (reply.pendingPrompt ? "pending_offer" : undefined),
+      recordStruggle: reply.recordStruggle,
+    });
+    if (
+      reply.turnKind === "cart_updated" ||
+      reply.turnKind === "browse_catalog"
+    ) {
+      this.clearStruggleCount();
+    }
     await this.appendMessage("assistant", assistantText);
     await this.compactVisitorHistoryIfNeeded();
     this.setMeta("phase", this.phase);
@@ -999,7 +1208,13 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     ragContext: string,
     handlers?: MessageHandlers,
     chatHistory: AgentChatTurn[] = [],
-  ): Promise<{ text: string; creditsEstimate: number }> {
+  ): Promise<{
+    text: string;
+    creditsEstimate: number;
+    pendingPrompt?: import("@chatbot/domain").PendingPrompt | null;
+    turnKind?: VisitorTurnKind;
+    recordStruggle?: boolean;
+  }> {
     let orgHasCommerce = Boolean(this.env.DB && this.botId);
     if (orgHasCommerce && this.env.DB) {
       const cfg = await this.env.DB.prepare(
@@ -1057,11 +1272,10 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
 
     let nativeCatalogContext = "";
     if (hasNativeCatalog && this.env.DB && attachCommerce) {
-      const rows = await searchPublishedProducts(
+      const rows = await listPublishedProductsBrowse(
         this.env.DB,
         this.orgId,
-        userText,
-        12,
+        RAG_CATALOG_BROWSE_HINT_LIMIT,
       );
       const total = await countPublishedProducts(this.env.DB, this.orgId);
       nativeCatalogContext = formatNativeCatalogPromptSection(rows, {
@@ -1101,12 +1315,26 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         chatHistory,
         allowedHostComponents: this.hostComponents,
         commerceService: attachCommerce ? (commerceSvc ?? undefined) : undefined,
+        visitorIntent: intent,
         handlers: {
           onStreamStart: handlers?.onStreamStart,
           onDelta: handlers?.onDelta,
         },
       });
-      return { text: agent.text, creditsEstimate: agent.creditsEstimate };
+      if (agent.pendingPrompt) {
+        this.setMeta(
+          PENDING_PROMPT_META_KEY,
+          serializePendingPrompt(agent.pendingPrompt),
+        );
+      }
+      const textOut = agent.text;
+      return {
+        text: textOut,
+        creditsEstimate: agent.creditsEstimate,
+        pendingPrompt: agent.pendingPrompt,
+        turnKind: agent.turnKind,
+        recordStruggle: agent.recordStruggle,
+      };
     }
 
     const systemWithRag = [

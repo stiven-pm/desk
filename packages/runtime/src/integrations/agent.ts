@@ -51,10 +51,19 @@ import {
   type CommerceToolProduct,
 } from "../commerce/native-catalog-ui";
 import { executeDeskIntegrationTool } from "./execute-integration-tool";
+import { type PendingPrompt } from "@chatbot/domain";
+import {
+  inferAgentVisitorTurnKind,
+  type VisitorTurnIntent,
+  type VisitorTurnKind,
+} from "@chatbot/domain";
 
 export type AgentRunResult = {
   text: string;
   creditsEstimate: number;
+  pendingPrompt?: import("@chatbot/domain").PendingPrompt | null;
+  turnKind?: VisitorTurnKind;
+  recordStruggle?: boolean;
 };
 
 export type AgentStreamHandlers = {
@@ -192,6 +201,50 @@ function lastUserContent(messages: Msg[], fallback: string): string {
   return fallback.trim();
 }
 
+function pendingFromCommerceToolOutput(
+  toolName: string,
+  output: string,
+): PendingPrompt | null {
+  if (toolName !== "commerce_offer_action") return null;
+  try {
+    const data = JSON.parse(output) as { pending?: PendingPrompt };
+    return data.pending ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function agentResultWithPending(
+  base: AgentRunResult,
+  pending: PendingPrompt | null,
+): AgentRunResult {
+  if (!pending) return base;
+  return {
+    ...base,
+    pendingPrompt: pending,
+    turnKind: "pending_offer",
+  };
+}
+
+async function runCommerceCatalogSearch(
+  commerceService: CommerceService,
+  mode: "browse" | "search",
+  query = "",
+): Promise<CommerceToolProduct[] | null> {
+  const output = await executeCommerceTool(
+    commerceService,
+    "commerce_search_products",
+    mode === "browse" ? { mode: "browse" } : { mode: "search", query },
+  );
+  return parseCommerceSearchProducts(output);
+}
+
+async function runCommerceCatalogBrowseRescue(
+  commerceService: CommerceService,
+): Promise<CommerceToolProduct[] | null> {
+  return runCommerceCatalogSearch(commerceService, "browse");
+}
+
 async function runCommerceCatalogFallback(
   commerceService: CommerceService,
   messages: Msg[],
@@ -199,12 +252,7 @@ async function runCommerceCatalogFallback(
 ): Promise<CommerceToolProduct[] | null> {
   const visitorText = lastUserContent(messages, userMessage);
   if (isSmallTalkMessage(visitorText)) return null;
-  const output = await executeCommerceTool(
-    commerceService,
-    "commerce_search_products",
-    { query: visitorText.slice(0, 200) },
-  );
-  return parseCommerceSearchProducts(output);
+  return runCommerceCatalogBrowseRescue(commerceService);
 }
 
 async function agentTurnFailureOrRescue(args: {
@@ -216,35 +264,35 @@ async function agentTurnFailureOrRescue(args: {
   totalCredits: number;
   prose?: string;
 }): Promise<AgentRunResult> {
+  const visitorText = lastUserContent(args.messages, args.userMessage);
   if (args.commerceEnabled && args.commerceService) {
-    const products = await runCommerceCatalogFallback(
-      args.commerceService,
-      args.messages,
-      args.userMessage,
+    console.error(
+      JSON.stringify({
+        tag: "desk_agent_turn_rescue",
+        reason: args.reason,
+        visitorText: visitorText.slice(0, 120),
+        rescued: false,
+        rescueMode: "honest_message",
+        at: new Date().toISOString(),
+      }),
     );
-    if (products?.length) {
-      const lead =
-        args.prose?.trim() ||
-        "Te comparto lo que tenemos disponible:";
-      const text = attachCatalogPickerIfNeeded(lead, products);
-      logDeskCommerceTurn({
-        searchUsed: true,
-        repairUsed: false,
-        fallbackUsed: true,
-        hasProductCatalog: assistantTextIncludesDeskBlock(
-          text,
-          DESK_UI_BLOCK_TYPE.productCatalog,
-        ),
-      });
-      return {
-        text,
-        creditsEstimate: args.totalCredits,
-      };
-    }
+  } else {
+    console.error(
+      JSON.stringify({
+        tag: "desk_agent_turn_rescue",
+        reason: args.reason,
+        visitorText: visitorText.slice(0, 120),
+        rescued: false,
+        commerceEnabled: args.commerceEnabled,
+        at: new Date().toISOString(),
+      }),
+    );
   }
   return {
     text: llmFailureText(args.reason, args.commerceEnabled),
     creditsEstimate: args.totalCredits,
+    turnKind: "agent_struggling",
+    recordStruggle: true,
   };
 }
 
@@ -555,12 +603,31 @@ async function finishAgentTurn(args: {
   prose: string;
   lastCommerceSearch: CommerceToolProduct[] | null;
   commerceSearchUsedThisTurn: boolean;
+  commerceCartMutatedThisTurn: boolean;
   totalCredits: number;
   userMessage: string;
+  visitorIntent: VisitorTurnIntent;
+  pendingPrompt: boolean;
 }): Promise<AgentRunResult> {
   const finalized = await finalizeCommerceAgentText(args);
   if (finalized.text.trim()) {
-    return { text: finalized.text, creditsEstimate: finalized.credits };
+    const hasProductCatalog = assistantTextIncludesDeskBlock(
+      finalized.text,
+      DESK_UI_BLOCK_TYPE.productCatalog,
+    );
+    const turnKind = inferAgentVisitorTurnKind({
+      visitorIntent: args.visitorIntent,
+      pendingPrompt: args.pendingPrompt,
+      hasProductCatalog,
+      commerceSearchUsed: args.commerceSearchUsedThisTurn,
+      commerceCartMutated: args.commerceCartMutatedThisTurn,
+      agentRescueFailure: false,
+    });
+    return {
+      text: finalized.text,
+      creditsEstimate: finalized.credits,
+      turnKind,
+    };
   }
   return agentTurnFailureOrRescue({
     reason: "empty_response",
@@ -585,8 +652,11 @@ export async function runAgentWithTools(
     handlers?: AgentStreamHandlers;
     maxToolRounds?: number;
     commerceService?: CommerceService;
+    getPendingPrompt?: () => PendingPrompt | null;
+    visitorIntent?: VisitorTurnIntent;
   },
 ): Promise<AgentRunResult> {
+  const visitorIntent = params.visitorIntent ?? "general";
   const sanitize = (raw: string) =>
     validateAssistantMessage(raw, {
       allowedHostComponents: params.allowedHostComponents,
@@ -665,7 +735,7 @@ export async function runAgentWithTools(
       ? [
           "Herramientas disponibles en esta sesión: úsalas cuando el usuario necesite datos reales (no repitas el tono humano del system prompt).",
           commerceEnabled
-            ? `Comercio: interpreta la intención del visitante y usa ${COMMERCE_TOOL.searchProducts}, ${COMMERCE_TOOL.cartGet}, ${COMMERCE_TOOL.cartAdd}, ${COMMERCE_TOOL.cartUpdate}, ${COMMERCE_TOOL.setBuyer} y ${COMMERCE_TOOL.startCheckout} según corresponda. Tras search, el visitante debe poder abrir el catálogo con type ${DESK_UI_BLOCK_TYPE.productCatalog} (botón + lista); no vuelques el catálogo en prosa.`
+            ? `Comercio: interpreta la intención del visitante y usa ${COMMERCE_TOOL.searchProducts} con mode browse o search, ${COMMERCE_TOOL.cartGet}, ${COMMERCE_TOOL.cartAdd}, ${COMMERCE_TOOL.cartUpdate}, ${COMMERCE_TOOL.setBuyer} y ${COMMERCE_TOOL.startCheckout} según corresponda. Tras search, el visitante debe poder abrir el catálogo con type ${DESK_UI_BLOCK_TYPE.productCatalog} (botón + lista); no vuelques el catálogo en prosa.`
             : "",
           "Si el runtime no devuelve tool_calls nativos, responde solo con:",
           '```json\n{"tool":"nombre_exacto","arguments":{}}\n```',
@@ -691,6 +761,8 @@ export async function runAgentWithTools(
   let httpToolCalls = 0;
   let lastCommerceSearch: CommerceToolProduct[] | null = null;
   let commerceSearchUsedThisTurn = false;
+  let commerceCartMutatedThisTurn = false;
+  let pendingPromptOut: PendingPrompt | null = null;
 
   logHarnessMetric(env.ANALYTICS, {
     botId: params.botId,
@@ -714,30 +786,37 @@ export async function runAgentWithTools(
       if (!streamed.ok || !streamed.content.trim()) {
         const fallback = await llmChatWithMessages(env, { messages });
         if (!fallback.ok) {
-          return agentTurnFailureOrRescue({
+          return agentResultWithPending(
+            await agentTurnFailureOrRescue({
             reason: fallback.reason,
             commerceEnabled,
             commerceService: params.commerceService,
             messages,
             userMessage: params.user,
             totalCredits,
-          });
+          }),
+            pendingPromptOut,
+          );
         }
         totalCredits += Math.ceil(
           (fallback.promptTokens + fallback.completionTokens) / 4,
         );
         const text = sanitize(fallback.content).trim();
         if (!text) {
-          return agentTurnFailureOrRescue({
-            reason: "empty_response",
-            commerceEnabled,
-            commerceService: params.commerceService,
-            messages,
-            userMessage: params.user,
-            totalCredits,
-          });
+          return agentResultWithPending(
+            await agentTurnFailureOrRescue({
+              reason: "empty_response",
+              commerceEnabled,
+              commerceService: params.commerceService,
+              messages,
+              userMessage: params.user,
+              totalCredits,
+            }),
+            pendingPromptOut,
+          );
         }
-        return finishAgentTurn({
+        return agentResultWithPending(
+          await finishAgentTurn({
           env,
           messages,
           llmTools,
@@ -748,12 +827,18 @@ export async function runAgentWithTools(
           prose: text,
           lastCommerceSearch,
           commerceSearchUsedThisTurn,
+          commerceCartMutatedThisTurn,
           totalCredits,
           userMessage: params.user,
-        });
+          visitorIntent,
+          pendingPrompt: Boolean(pendingPromptOut),
+        }),
+          pendingPromptOut,
+        );
       }
       totalCredits += Math.ceil(streamed.completionTokens / 4);
-      return finishAgentTurn({
+      return agentResultWithPending(
+        await finishAgentTurn({
         env,
         messages,
         llmTools,
@@ -764,9 +849,14 @@ export async function runAgentWithTools(
         prose: sanitize(streamed.content),
         lastCommerceSearch,
         commerceSearchUsedThisTurn,
+        commerceCartMutatedThisTurn,
         totalCredits,
         userMessage: params.user,
-      });
+        visitorIntent,
+        pendingPrompt: Boolean(pendingPromptOut),
+      }),
+        pendingPromptOut,
+      );
     }
 
     const result = await agentLlmTurnWithRetry(env, {
@@ -779,14 +869,17 @@ export async function runAgentWithTools(
     });
 
     if (!result.ok) {
-      return agentTurnFailureOrRescue({
-        reason: result.reason,
-        commerceEnabled,
-        commerceService: params.commerceService,
-        messages,
-        userMessage: params.user,
-        totalCredits,
-      });
+      return agentResultWithPending(
+        await agentTurnFailureOrRescue({
+          reason: result.reason,
+          commerceEnabled,
+          commerceService: params.commerceService,
+          messages,
+          userMessage: params.user,
+          totalCredits,
+        }),
+        pendingPromptOut,
+      );
     }
     totalCredits += Math.ceil(
       (result.promptTokens + result.completionTokens) / 4,
@@ -795,7 +888,8 @@ export async function runAgentWithTools(
     if (!result.toolCalls?.length) {
       const finalText = sanitize(result.content).trim();
       if (finalText) {
-        return finishAgentTurn({
+        return agentResultWithPending(
+          await finishAgentTurn({
           env,
           messages,
           llmTools,
@@ -806,9 +900,14 @@ export async function runAgentWithTools(
           prose: finalText,
           lastCommerceSearch,
           commerceSearchUsedThisTurn,
+          commerceCartMutatedThisTurn,
           totalCredits,
           userMessage: params.user,
-        });
+          visitorIntent,
+          pendingPrompt: Boolean(pendingPromptOut),
+        }),
+          pendingPromptOut,
+        );
       }
       break;
     }
@@ -845,6 +944,15 @@ export async function runAgentWithTools(
             commerceSearchUsedThisTurn = true;
             lastCommerceSearch = parseCommerceSearchProducts(output);
           }
+          if (
+            call.name === "commerce_cart_add" ||
+            call.name === "commerce_cart_update" ||
+            call.name === "commerce_cart_remove"
+          ) {
+            commerceCartMutatedThisTurn = true;
+          }
+          const offered = pendingFromCommerceToolOutput(call.name, output);
+          if (offered) pendingPromptOut = offered;
         } else if (entry?.kind === "http") {
           if (httpToolCalls >= MAX_HTTP_TOOL_CALLS_PER_TURN) {
             output = JSON.stringify({ error: "http_tool_limit" });
@@ -891,7 +999,8 @@ export async function runAgentWithTools(
     });
     if (streamed.ok && streamed.content.trim()) {
       totalCredits += Math.ceil(streamed.completionTokens / 4);
-      return finishAgentTurn({
+      return agentResultWithPending(
+        await finishAgentTurn({
         env,
         messages,
         llmTools,
@@ -902,28 +1011,37 @@ export async function runAgentWithTools(
         prose: sanitize(streamed.content),
         lastCommerceSearch,
         commerceSearchUsedThisTurn,
+        commerceCartMutatedThisTurn,
         totalCredits,
         userMessage: params.user,
-      });
+        visitorIntent,
+        pendingPrompt: Boolean(pendingPromptOut),
+      }),
+        pendingPromptOut,
+      );
     }
   }
 
   const final = await llmChatWithMessages(env, { messages });
   if (!final.ok) {
-    return agentTurnFailureOrRescue({
-      reason: final.reason,
-      commerceEnabled,
-      commerceService: params.commerceService,
-      messages,
-      userMessage: params.user,
-      totalCredits,
-    });
+    return agentResultWithPending(
+      await agentTurnFailureOrRescue({
+        reason: final.reason,
+        commerceEnabled,
+        commerceService: params.commerceService,
+        messages,
+        userMessage: params.user,
+        totalCredits,
+      }),
+      pendingPromptOut,
+    );
   }
   totalCredits += Math.ceil(
     (final.promptTokens + final.completionTokens) / 4,
   );
   const text = sanitize(final.content).trim();
-  return finishAgentTurn({
+  return agentResultWithPending(
+    await finishAgentTurn({
     env,
     messages,
     llmTools,
@@ -934,9 +1052,14 @@ export async function runAgentWithTools(
     prose: text,
     lastCommerceSearch,
     commerceSearchUsedThisTurn,
+    commerceCartMutatedThisTurn,
     totalCredits,
     userMessage: params.user,
-  });
+    visitorIntent,
+    pendingPrompt: Boolean(pendingPromptOut),
+  }),
+    pendingPromptOut,
+  );
 }
 
 async function runAgentWithoutTools(

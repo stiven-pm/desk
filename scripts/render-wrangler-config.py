@@ -62,7 +62,7 @@ OPTIONAL_TURNSTILE_KEYS = ("TURNSTILE_SITE_KEY",)
 OPTIONAL_DEFAULTS = {
     "CHATBOT_ENV": ("production", "test"),
     "SIGNUPS_OPEN": ("true", "true"),
-    "WORKERS_AI_CHAT_MODEL": ("@cf/deepseek-ai/deepseek-v4-flash-0731", "@cf/deepseek-ai/deepseek-v4-flash-0731"),
+    "WORKERS_AI_CHAT_MODEL": ("@cf/zai-org/glm-5.3-flash", "@cf/zai-org/glm-5.3-flash"),
     "WORKERS_AI_EMBEDDING_MODEL": ("@cf/baai/bge-m3", "@cf/baai/bge-m3"),
     "LLM_REQUEST_TIMEOUT_MS": ("45000", "45000"),
     "LLM_STREAM_ENABLED": ("true", "true"),

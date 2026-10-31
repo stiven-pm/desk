@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { PLAN_MARKETING, type PlanSlug } from "@chatbot/domain";
+import {
+  detectBrowserOrgTimezone,
+  OrgTimezoneSelect,
+} from "@/components/org-timezone-select";
 import { CheckoutRedirect } from "@/components/checkout-redirect";
 import { MarketingShell } from "@/components/marketing-shell";
 import { api } from "@/lib/api";
@@ -17,12 +21,17 @@ function RegisterForm() {
   const plan = (params.get("plan") as PlanSlug | null) ?? "starter";
   const [signupsOpen, setSignupsOpen] = useState<boolean | null>(null);
   const [orgName, setOrgName] = useState("");
+  const [timezone, setTimezone] = useState("America/Bogota");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [openingCheckout, setOpeningCheckout] = useState(false);
+
+  useEffect(() => {
+    setTimezone(detectBrowserOrgTimezone());
+  }, []);
 
   useEffect(() => {
     publicApi<{ signupsOpen: boolean }>("/v1/public/meta")
@@ -48,6 +57,7 @@ function RegisterForm() {
           email: email.trim().toLowerCase(),
           password,
           orgName: orgName.trim(),
+          timezone,
         }),
       });
       localStorage.setItem("token", data.token);
@@ -109,6 +119,14 @@ function RegisterForm() {
           required
           minLength={2}
           autoComplete="organization"
+          disabled={loading}
+        />
+      </label>
+      <label className="block text-sm">
+        Zona horaria (métricas y reportes)
+        <OrgTimezoneSelect
+          value={timezone}
+          onChange={setTimezone}
           disabled={loading}
         />
       </label>

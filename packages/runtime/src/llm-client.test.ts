@@ -12,6 +12,13 @@ describe("workersAiChatRequestBody", () => {
     );
     expect(body.reasoning_effort).toBe("none");
   });
+
+  it("usa reasoning bajo en GLM-5.3-Flash", () => {
+    const body = workersAiChatRequestBody("@cf/zai-org/glm-5.3-flash", {
+      messages: [],
+    });
+    expect(body.reasoning_effort).toBe("low");
+  });
 });
 
 describe("extractWorkersAiChatText", () => {

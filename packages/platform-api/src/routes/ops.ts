@@ -3,7 +3,7 @@ import type { AppEnv } from "../types";
 import { json, apiError } from "../lib/http";
 import { createOpsToken, opsLogin, requireOps } from "../lib/ops-auth";
 import { provisionOrganization } from "../lib/org-provision";
-import { planFromSlug, WALLET_CREDIT_PACKS } from "@chatbot/domain";
+import { planFromSlug, WALLET_CREDIT_PACKS, orgTimezoneSchema, resolveOrgTimezone } from "@chatbot/domain";
 import {
   fetchOpsOrgMetrics,
   fetchOpsPlatformOverview,
@@ -86,8 +86,13 @@ export function registerOpsRoutes(app: Hono<AppEnv>): void {
       adminEmail?: string;
       plan?: string;
       status?: "invited" | "active" | "pending";
+      timezone?: string;
     };
     if (!body.name || !body.adminEmail) return apiError("invalid_body", 400);
+    const tzParsed = orgTimezoneSchema.safeParse(body.timezone ?? undefined);
+    if (body.timezone != null && body.timezone !== "" && !tzParsed.success) {
+      return apiError("invalid_body", 400);
+    }
 
     const result = await provisionOrganization(c.env, {
       name: body.name,
@@ -95,6 +100,7 @@ export function registerOpsRoutes(app: Hono<AppEnv>): void {
       planSlug: planFromSlug(body.plan ?? "starter"),
       status: body.status ?? "invited",
       invitedByUserId: auth.user.id,
+      timezone: tzParsed.success ? tzParsed.data : undefined,
     });
 
     return json({
@@ -173,5 +179,17 @@ export function registerOpsRoutes(app: Hono<AppEnv>): void {
       .bind(body.status, c.req.param("orgId"))
       .run();
     return json({ ok: true });
+  });
+
+  app.patch("/v1/ops/orgs/:orgId/timezone", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    const body = (await c.req.json()) as { timezone?: string };
+    const parsed = orgTimezoneSchema.safeParse(body.timezone);
+    if (!parsed.success) return apiError("invalid_body", 400);
+    await c.env.DB.prepare(`UPDATE orgs SET timezone = ? WHERE id = ?`)
+      .bind(resolveOrgTimezone(parsed.data), c.req.param("orgId"))
+      .run();
+    return json({ ok: true, timezone: resolveOrgTimezone(parsed.data) });
   });
 }

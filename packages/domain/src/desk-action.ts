@@ -1,4 +1,4 @@
-import { DESK_CMD_CART, DESK_CMD_CONFIRM_PRICE, DESK_CMD_CONSENT, DESK_CMD_MENU, DESK_CMD_PAY, deskCmdAdd, deskCmdProduct, deskCmdSetQty } from "./desk-action-commands";
+import { DESK_CMD_CART, DESK_CMD_CONFIRM_PRICE, DESK_CMD_CONSENT, DESK_CMD_HUMAN, DESK_CMD_MENU, DESK_CMD_OFFER_ACCEPT, DESK_CMD_OFFER_DECLINE, DESK_CMD_PAY, deskCmdAdd, deskCmdProduct, deskCmdSetQty } from "./desk-action-commands";
 import { b64urlDecode, b64urlEncode as b64url } from "./b64url-bytes";
 
 export const DESK_ACTION_PREFIX = "desk.act.v1.";
@@ -9,6 +9,9 @@ export type DeskCommand =
   | { kind: "pay" }
   | { kind: "consent" }
   | { kind: "confirm_price" }
+  | { kind: "human" }
+  | { kind: "offer_accept" }
+  | { kind: "offer_decline" }
   | { kind: "add"; productId: string; quantity?: number }
   | { kind: "view_product"; productId: string; title?: string }
   | { kind: "set_qty"; productId: string; quantity: number };
@@ -42,6 +45,12 @@ export function deskCommandToInternal(cmd: DeskCommand): string {
       return DESK_CMD_CONSENT;
     case "confirm_price":
       return DESK_CMD_CONFIRM_PRICE;
+    case "human":
+      return DESK_CMD_HUMAN;
+    case "offer_accept":
+      return DESK_CMD_OFFER_ACCEPT;
+    case "offer_decline":
+      return DESK_CMD_OFFER_DECLINE;
     case "add":
       return deskCmdAdd(cmd.productId, cmd.quantity);
     case "view_product":
@@ -63,6 +72,12 @@ export function deskCommandDisplayLabel(cmd: DeskCommand): string {
       return "Acepto";
     case "confirm_price":
       return "Confirmar total";
+    case "human":
+      return "Hablar con una persona";
+    case "offer_accept":
+      return "Sí";
+    case "offer_decline":
+      return "No";
     case "add":
       return cmd.quantity != null && cmd.quantity > 1
         ? `Añadir ${cmd.quantity}`
@@ -90,6 +105,9 @@ export function parseInternalDeskCommand(text: string): DeskCommand | null {
   if (t === DESK_CMD_PAY) return { kind: "pay" };
   if (t === DESK_CMD_CONSENT) return { kind: "consent" };
   if (t === DESK_CMD_CONFIRM_PRICE) return { kind: "confirm_price" };
+  if (t === DESK_CMD_HUMAN) return { kind: "human" };
+  if (t === DESK_CMD_OFFER_ACCEPT) return { kind: "offer_accept" };
+  if (t === DESK_CMD_OFFER_DECLINE) return { kind: "offer_decline" };
   const product = t.match(/^__desk:product:([^:]+)__$/);
   if (product?.[1]) {
     return { kind: "view_product", productId: product[1] };
@@ -188,6 +206,15 @@ export async function internalDeskCommandToToken(
   if (t === DESK_CMD_CONSENT) return signDeskAction(secret, conversationId, { kind: "consent" });
   if (t === DESK_CMD_CONFIRM_PRICE) {
     return signDeskAction(secret, conversationId, { kind: "confirm_price" });
+  }
+  if (t === DESK_CMD_HUMAN) {
+    return signDeskAction(secret, conversationId, { kind: "human" });
+  }
+  if (t === DESK_CMD_OFFER_ACCEPT) {
+    return signDeskAction(secret, conversationId, { kind: "offer_accept" });
+  }
+  if (t === DESK_CMD_OFFER_DECLINE) {
+    return signDeskAction(secret, conversationId, { kind: "offer_decline" });
   }
   const product = t.match(/^__desk:product:([^:]+)__$/);
   if (product?.[1]) {

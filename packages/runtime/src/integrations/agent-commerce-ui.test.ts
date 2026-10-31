@@ -17,22 +17,24 @@ import { runAgentWithTools } from "./agent";
 
 function mockCommerceService(): CommerceService {
   return {
-    searchProducts: vi.fn(async () => [
-      {
-        id: "snack-1",
-        name: "Papas clásicas",
-        description: null,
-        price_cents: 3500,
-        compare_at_price_cents: null,
-        promo_label: null,
-        currency: "COP",
-        image_url: null,
-        stock_qty: 10,
-        allows_additions: 0,
-        category: null,
-        featured: 0,
-      },
-    ]),
+    searchProducts: vi.fn(async () => ({
+      products: [
+        {
+          id: "snack-1",
+          name: "Papas clásicas",
+          description: null,
+          price_cents: 3500,
+          compare_at_price_cents: null,
+          promo_label: null,
+          currency: "COP",
+          image_url: null,
+          stock_qty: 10,
+          allows_additions: 0,
+          category: null,
+          featured: 0,
+        },
+      ],
+    })),
   } as unknown as CommerceService;
 }
 
@@ -67,7 +69,7 @@ describe("runAgentWithTools commerce catalog UI", () => {
     expect(commerceService.searchProducts).toHaveBeenCalled();
   });
 
-  it("rescatar catálogo si el LLM falla por http_error", async () => {
+  it("mensaje honesto si el LLM falla por http_error (sin catálogo inventado)", async () => {
     agentLlmTurn.mockResolvedValue({ ok: false, reason: "http_error" });
     const commerceService = mockCommerceService();
     const env = {
@@ -83,8 +85,8 @@ describe("runAgentWithTools commerce catalog UI", () => {
       commerceService,
     });
 
-    expect(result.text).toContain("product_catalog");
-    expect(commerceService.searchProducts).toHaveBeenCalled();
+    expect(result.text).toContain("problema técnico");
+    expect(result.text).not.toContain("product_catalog");
   });
 
   it("no ejecuta search fallback en saludo puro", async () => {

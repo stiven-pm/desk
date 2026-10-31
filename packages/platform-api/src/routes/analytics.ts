@@ -3,7 +3,7 @@ import type { AppEnv } from "../types";
 import { requireUser } from "../lib/auth";
 import { json } from "../lib/http";
 import { getUsage } from "../lib/usage";
-import { PLAN_LIMITS, planFromSlug } from "@chatbot/domain";
+import { PLAN_LIMITS, planFromSlug, bucketConversationsByLocalDay, resolveOrgTimezone } from "@chatbot/domain";
 
 export function registerAnalyticsRoutes(app: Hono<AppEnv>): void {
   app.get("/v1/admin/analytics", async (c) => {
@@ -11,10 +11,12 @@ export function registerAnalyticsRoutes(app: Hono<AppEnv>): void {
     if ("response" in auth) return auth.response;
 
     const org = await c.env.DB.prepare(
-      `SELECT plan_slug, status FROM orgs WHERE id = ?`,
+      `SELECT plan_slug, status, timezone FROM orgs WHERE id = ?`,
     )
       .bind(auth.user.orgId)
-      .first<{ plan_slug: string; status: string }>();
+      .first<{ plan_slug: string; status: string; timezone?: string | null }>();
+
+    const orgTimezone = resolveOrgTimezone(org?.timezone);
 
     const usage = await getUsage(c.env, auth.user.orgId!);
     const limits = PLAN_LIMITS[planFromSlug(org?.plan_slug ?? "starter")];
@@ -84,17 +86,23 @@ export function registerAnalyticsRoutes(app: Hono<AppEnv>): void {
       started > 0 ? Math.round((paid / started) * 1000) / 10 : null;
     const aiHandledEstimate = Math.max(0, (conv30?.n ?? 0) - (handoffs30?.n ?? 0));
 
-    const daily = await c.env.DB.prepare(
-      `SELECT date(created_at) as day, COUNT(*) as conversations
-       FROM conversations WHERE org_id = ? AND created_at > datetime('now', '-14 days')
-       GROUP BY date(created_at) ORDER BY day ASC`,
+    const dailyRows = await c.env.DB.prepare(
+      `SELECT created_at FROM conversations
+       WHERE org_id = ? AND created_at > datetime('now', '-16 days')`,
     )
       .bind(auth.user.orgId)
-      .all<{ day: string; conversations: number }>();
+      .all<{ created_at: string }>();
+
+    const conversationsByDay = bucketConversationsByLocalDay(
+      dailyRows.results ?? [],
+      orgTimezone,
+      { maxDays: 14 },
+    );
 
     return json({
       orgStatus: org?.status,
       planSlug: org?.plan_slug,
+      reportingTimezone: orgTimezone,
       usage,
       limits,
       summary: {
@@ -111,7 +119,7 @@ export function registerAnalyticsRoutes(app: Hono<AppEnv>): void {
         checkoutConversionPct: conversionPct,
         conversationsHandledByAiEstimate: aiHandledEstimate,
       },
-      conversationsByDay: daily.results ?? [],
+      conversationsByDay,
     });
   });
 }
