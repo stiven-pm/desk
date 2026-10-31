@@ -132,6 +132,10 @@ export function buildBuyerConsentLead(): string {
   return NATIVE_COMMERCE_LEAD.consentBeforePay;
 }
 
+export function buildFulfillmentModeLead(): string {
+  return NATIVE_COMMERCE_LEAD.fulfillmentMode;
+}
+
 /** Tras elegir producto: el visitante responde con un número en el chat. */
 export function buildQuantityPickerDeskUi(
   row: NativeProductRow,

@@ -1,4 +1,9 @@
-import type { CommerceBuyer, CommerceCart, CommerceCartLine } from "@chatbot/domain";
+import type {
+  CommerceBuyer,
+  CommerceCart,
+  CommerceCartLine,
+  OrderFulfillment,
+} from "@chatbot/domain";
 
 export const META_CART = "commerce_cart_json";
 export const META_BUYER = "commerce_buyer_json";
@@ -11,6 +16,7 @@ export const META_LINKED_STORE_CONVERSATION = "commerce_linked_store_conversatio
 export const META_LINKED_STORE_CART = "linked_store_cart_json";
 export const META_BUYER_CONSENT = "commerce_buyer_consent_at";
 export const META_BUYER_CONSENT_POLICY = "commerce_buyer_consent_policy";
+export const META_CHECKOUT_FULFILLMENT = "commerce_checkout_fulfillment_json";
 
 export function emptyCart(currency = "USD"): CommerceCart {
   return { lines: [], currency, updatedAt: new Date().toISOString() };
@@ -35,6 +41,19 @@ export function parseBuyer(raw: string | null): CommerceBuyer | null {
   if (!raw) return null;
   try {
     return JSON.parse(raw) as CommerceBuyer;
+  } catch {
+    return null;
+  }
+}
+
+export function parseCheckoutFulfillment(
+  raw: string | null,
+): OrderFulfillment | null {
+  if (!raw?.trim()) return null;
+  try {
+    const f = JSON.parse(raw) as OrderFulfillment;
+    if (f.mode !== "pickup" && f.mode !== "delivery") return null;
+    return f;
   } catch {
     return null;
   }

@@ -1,4 +1,4 @@
-import { DESK_CMD_CART, DESK_CMD_CONFIRM_PRICE, DESK_CMD_CONSENT, DESK_CMD_HUMAN, DESK_CMD_MENU, DESK_CMD_OFFER_ACCEPT, DESK_CMD_OFFER_DECLINE, DESK_CMD_PAY, deskCmdAdd, deskCmdProduct, deskCmdSetQty } from "./desk-action-commands";
+import { DESK_CMD_CART, DESK_CMD_CONFIRM_PRICE, DESK_CMD_CONSENT, DESK_CMD_FULFILLMENT_DELIVERY, DESK_CMD_FULFILLMENT_PICKUP, DESK_CMD_HUMAN, DESK_CMD_MENU, DESK_CMD_OFFER_ACCEPT, DESK_CMD_OFFER_DECLINE, DESK_CMD_PAY, deskCmdAdd, deskCmdProduct, deskCmdSetQty } from "./desk-action-commands";
 import { b64urlDecode, b64urlEncode as b64url } from "./b64url-bytes";
 
 export const DESK_ACTION_PREFIX = "desk.act.v1.";
@@ -12,6 +12,8 @@ export type DeskCommand =
   | { kind: "human" }
   | { kind: "offer_accept" }
   | { kind: "offer_decline" }
+  | { kind: "fulfillment_pickup" }
+  | { kind: "fulfillment_delivery" }
   | { kind: "add"; productId: string; quantity?: number }
   | { kind: "view_product"; productId: string; title?: string }
   | { kind: "set_qty"; productId: string; quantity: number };
@@ -51,6 +53,10 @@ export function deskCommandToInternal(cmd: DeskCommand): string {
       return DESK_CMD_OFFER_ACCEPT;
     case "offer_decline":
       return DESK_CMD_OFFER_DECLINE;
+    case "fulfillment_pickup":
+      return DESK_CMD_FULFILLMENT_PICKUP;
+    case "fulfillment_delivery":
+      return DESK_CMD_FULFILLMENT_DELIVERY;
     case "add":
       return deskCmdAdd(cmd.productId, cmd.quantity);
     case "view_product":
@@ -78,6 +84,10 @@ export function deskCommandDisplayLabel(cmd: DeskCommand): string {
       return "Sí";
     case "offer_decline":
       return "No";
+    case "fulfillment_pickup":
+      return "Recoger en tienda";
+    case "fulfillment_delivery":
+      return "Envío a domicilio";
     case "add":
       return cmd.quantity != null && cmd.quantity > 1
         ? `Añadir ${cmd.quantity}`
@@ -108,6 +118,8 @@ export function parseInternalDeskCommand(text: string): DeskCommand | null {
   if (t === DESK_CMD_HUMAN) return { kind: "human" };
   if (t === DESK_CMD_OFFER_ACCEPT) return { kind: "offer_accept" };
   if (t === DESK_CMD_OFFER_DECLINE) return { kind: "offer_decline" };
+  if (t === DESK_CMD_FULFILLMENT_PICKUP) return { kind: "fulfillment_pickup" };
+  if (t === DESK_CMD_FULFILLMENT_DELIVERY) return { kind: "fulfillment_delivery" };
   const product = t.match(/^__desk:product:([^:]+)__$/);
   if (product?.[1]) {
     return { kind: "view_product", productId: product[1] };
@@ -215,6 +227,12 @@ export async function internalDeskCommandToToken(
   }
   if (t === DESK_CMD_OFFER_DECLINE) {
     return signDeskAction(secret, conversationId, { kind: "offer_decline" });
+  }
+  if (t === DESK_CMD_FULFILLMENT_PICKUP) {
+    return signDeskAction(secret, conversationId, { kind: "fulfillment_pickup" });
+  }
+  if (t === DESK_CMD_FULFILLMENT_DELIVERY) {
+    return signDeskAction(secret, conversationId, { kind: "fulfillment_delivery" });
   }
   const product = t.match(/^__desk:product:([^:]+)__$/);
   if (product?.[1]) {

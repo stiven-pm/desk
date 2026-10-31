@@ -19,6 +19,7 @@ import {
   appendCartDeskUiFence,
   appendCheckoutPaymentDeskUi,
   buildBuyerConsentLead,
+  buildFulfillmentModeLead,
   buildInvalidQuantityReply,
   buildProductDetailDeskUi,
   buildQuantityPickerDeskUi,
@@ -132,6 +133,9 @@ function checkoutFailureNativeTurn(
   });
   if (resolved.type === "buyer_consent") {
     return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
+  }
+  if (checkout.code === "fulfillment_required") {
+    return nativeTurn(buildFulfillmentModeLead(), "fulfillment_mode");
   }
   if (resolved.type === "price_confirm") {
     return nativeTurn(nativePriceChangedLead(resolved.totalFormatted), "checkout", {
@@ -336,6 +340,59 @@ async function runCheckout(
   );
 }
 
+function promptFulfillmentMode(): NativeCommerceTurnResult {
+  return nativeTurn(buildFulfillmentModeLead(), "fulfillment_mode");
+}
+
+async function continueTowardCheckout(args: {
+  svc: CommerceService;
+  setMeta: (key: string, value: string) => void;
+  turnstileToken?: string;
+  checkoutOpts?: {
+    confirmPriceChange?: boolean;
+    confirmCartChange?: boolean;
+  };
+}): Promise<NativeCommerceTurnResult> {
+  const { svc, setMeta, turnstileToken, checkoutOpts } = args;
+  const next = await nextBuyerField(svc, svc.getBuyer());
+  if (next) {
+    setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
+    return nativeTurn(buyerPrompt(next), "buyer_field");
+  }
+  if (!svc.hasBuyerConsent()) {
+    return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
+  }
+  if (!svc.getCheckoutFulfillment()) {
+    return promptFulfillmentMode();
+  }
+  return runCheckout(svc, { turnstileToken, ...checkoutOpts });
+}
+
+async function applyFulfillmentModeAndCheckout(args: {
+  svc: CommerceService;
+  setMeta: (key: string, value: string) => void;
+  mode: "pickup" | "delivery";
+  turnstileToken?: string;
+}): Promise<NativeCommerceTurnResult> {
+  const { svc, setMeta, mode, turnstileToken } = args;
+  const buyer = svc.getBuyer();
+  if (!buyer) {
+    return continueTowardCheckout({ svc, setMeta, turnstileToken });
+  }
+  if (mode === "delivery" && !buyer.address?.trim()) {
+    setMeta(
+      META_COMMERCE_UX,
+      JSON.stringify({ mode: "buyer", field: "address" }),
+    );
+    return nativeTurn(buyerPrompt("address"), "buyer_field");
+  }
+  svc.setCheckoutFulfillment(svc.fulfillmentFromBuyer(mode, buyer));
+  if (!svc.hasBuyerConsent()) {
+    return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
+  }
+  return runCheckout(svc, { turnstileToken });
+}
+
 export async function tryNativeCommerceTurn(args: {
   db: D1Database;
   orgId: string;
@@ -358,20 +415,37 @@ export async function tryNativeCommerceTurn(args: {
 
   if (deskCmd?.kind === "consent") {
     await svc.recordBuyerConsentAsync();
-    const next = await nextBuyerField(svc, svc.getBuyer());
-    if (next) {
-      setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-      return nativeTurn(buyerPrompt(next), "buyer_field");
-    }
-    return await runCheckout(svc, { turnstileToken });
+    return continueTowardCheckout({ svc, setMeta, turnstileToken });
+  }
+
+  if (deskCmd?.kind === "fulfillment_pickup") {
+    return applyFulfillmentModeAndCheckout({
+      svc,
+      setMeta,
+      mode: "pickup",
+      turnstileToken,
+    });
+  }
+
+  if (deskCmd?.kind === "fulfillment_delivery") {
+    return applyFulfillmentModeAndCheckout({
+      svc,
+      setMeta,
+      mode: "delivery",
+      turnstileToken,
+    });
   }
 
   if (deskCmd?.kind === "confirm_price") {
     await ensureCheckoutCartFromLinked(svc, getMeta, fetchLinkedStoreCart);
-    return await runCheckout(svc, {
-      confirmPriceChange: true,
-      confirmCartChange: true,
+    return continueTowardCheckout({
+      svc,
+      setMeta,
       turnstileToken,
+      checkoutOpts: {
+        confirmPriceChange: true,
+        confirmCartChange: true,
+      },
     });
   }
 
@@ -457,13 +531,14 @@ export async function tryNativeCommerceTurn(args: {
       [field]: checked.value,
     };
     await svc.persistBuyer(buyer);
+    svc.clearCheckoutFulfillment();
     const next = await nextBuyerField(svc, buyer);
     if (next) {
       setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
       return nativeTurn(buyerPrompt(next), "buyer_field");
     }
     clearUx();
-    return await runCheckout(svc, { turnstileToken });
+    return continueTowardCheckout({ svc, setMeta, turnstileToken });
   }
 
   if (deskCmd?.kind === "menu") {
@@ -500,26 +575,7 @@ export async function tryNativeCommerceTurn(args: {
     if (!cart.lines.length) {
       return nativeTurn(NATIVE_COMMERCE_LEAD.payNeedItems, "cart_view");
     }
-    if (!svc.hasBuyerConsent()) {
-      return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
-    }
-    const next = await nextBuyerField(svc, svc.getBuyer());
-    if (next) {
-      setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-      return nativeTurn(buyerPrompt(next), "buyer_field");
-    }
-    const checkoutResult = await runCheckout(svc, { turnstileToken });
-    if (checkoutResult.checkoutUrl) {
-      return nativeTurn(
-        appendCheckoutPaymentDeskUi(
-          NATIVE_COMMERCE_LEAD.payLink,
-          checkoutResult.checkoutUrl,
-        ),
-        "checkout",
-        { checkoutUrl: checkoutResult.checkoutUrl },
-      );
-    }
-    return checkoutResult;
+    return continueTowardCheckout({ svc, setMeta, turnstileToken });
   }
 
   if (deskCmd?.kind === "set_qty") {

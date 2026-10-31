@@ -2,6 +2,8 @@ import type { ConversationPhase } from "./conversation-state";
 import {
   DESK_CMD_CART,
   DESK_CMD_CONSENT,
+  DESK_CMD_FULFILLMENT_DELIVERY,
+  DESK_CMD_FULFILLMENT_PICKUP,
   DESK_CMD_HUMAN,
   DESK_CMD_MENU,
   DESK_CMD_OFFER_ACCEPT,
@@ -22,6 +24,7 @@ export type VisitorTurnKind =
   | "line_notes"
   | "buyer_field"
   | "buyer_consent"
+  | "fulfillment_mode"
   | "cart_view"
   | "cart_updated"
   | "pending_offer"
@@ -47,6 +50,8 @@ const PRIORITY_ORDER: string[] = [
   DESK_CMD_CART,
   DESK_CMD_MENU,
   DESK_CMD_CONSENT,
+  DESK_CMD_FULFILLMENT_PICKUP,
+  DESK_CMD_FULFILLMENT_DELIVERY,
   DESK_CMD_OFFER_ACCEPT,
   DESK_CMD_OFFER_DECLINE,
   DESK_CMD_HUMAN,
@@ -139,6 +144,20 @@ export function resolveVisitorActions(
         DESK_CMD_CONSENT,
       );
       break;
+    case "fulfillment_mode":
+      pushChoice(
+        items,
+        seen,
+        deskCommandDisplayLabel({ kind: "fulfillment_pickup" }),
+        DESK_CMD_FULFILLMENT_PICKUP,
+      );
+      pushChoice(
+        items,
+        seen,
+        deskCommandDisplayLabel({ kind: "fulfillment_delivery" }),
+        DESK_CMD_FULFILLMENT_DELIVERY,
+      );
+      break;
     case "cart_view":
       if (cartLineCount > 0) {
         pushChoice(
@@ -223,4 +242,11 @@ export function resolveVisitorActions(
 
 /** turnKinds que no deben llevar botones de acción en el harness. */
 export const VISITOR_TURN_KINDS_WITHOUT_ACTIONS: ReadonlySet<VisitorTurnKind> =
-  new Set(["pick_qty", "line_notes", "buyer_field", "browse_catalog", "checkout"]);
+  new Set([
+    "pick_qty",
+    "line_notes",
+    "buyer_field",
+    "fulfillment_mode",
+    "browse_catalog",
+    "checkout",
+  ]);

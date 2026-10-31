@@ -32,6 +32,7 @@ export const NATIVE_COMMERCE_LEAD = {
   noUnitsAvailable: "Ahora no hay unidades libres",
   consentBeforePay:
     "Para el pago necesitamos tus datos de contacto y entrega.",
+  fulfillmentMode: "¿Cómo quieres recibir tu pedido?",
   buyerFieldFallback: "¿Me compartes ese dato?",
 } as const;
 
@@ -43,7 +44,7 @@ export const COMMERCE_BUYER_FIELD_PROMPT: Partial<
     "¿Cuál es tu número de documento de identidad? (solo números)",
   phone: "¿Tu número de celular?",
   city: "¿En qué ciudad?",
-  address: "¿Cuál es tu dirección de entrega?",
+  address: "¿Cuál es tu dirección? (domicilio)",
 };
 
 export function nativeBuyerFieldPrompt(

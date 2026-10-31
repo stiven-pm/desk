@@ -37,6 +37,7 @@ import {
   META_CART,
   META_CATALOG_PRICES,
   META_CHECKOUT_PENDING,
+  META_CHECKOUT_FULFILLMENT,
   META_LAST_ORDER,
   META_BUYER_CONSENT,
   META_BUYER_CONSENT_POLICY,
@@ -45,6 +46,7 @@ import {
   META_SOURCE_CHANNEL,
   parseBuyer,
   parseCart,
+  parseCheckoutFulfillment,
   updateLineQty,
 } from "./cart-store";
 import {
@@ -205,6 +207,37 @@ export class CommerceService {
 
   hasBuyerConsent(): boolean {
     return Boolean(this.deps.meta.get(META_BUYER_CONSENT)?.trim());
+  }
+
+  getCheckoutFulfillment(): OrderFulfillment | null {
+    return parseCheckoutFulfillment(
+      this.deps.meta.get(META_CHECKOUT_FULFILLMENT),
+    );
+  }
+
+  setCheckoutFulfillment(fulfillment: OrderFulfillment): void {
+    this.deps.meta.set(
+      META_CHECKOUT_FULFILLMENT,
+      JSON.stringify(fulfillment),
+    );
+  }
+
+  clearCheckoutFulfillment(): void {
+    this.deps.meta.set(META_CHECKOUT_FULFILLMENT, "");
+  }
+
+  fulfillmentFromBuyer(
+    mode: OrderFulfillmentMode,
+    buyer: CommerceBuyer,
+  ): OrderFulfillment {
+    return {
+      mode,
+      fullName: buyer.name?.trim() || undefined,
+      phone: buyer.phone?.trim() || undefined,
+      city: buyer.city?.trim() || undefined,
+      address: mode === "delivery" ? buyer.address?.trim() || undefined : undefined,
+      capturedAt: new Date().toISOString(),
+    };
   }
 
   getBuyerConsentAt(): string | null {
@@ -639,6 +672,10 @@ export class CommerceService {
     if (!this.hasBuyerConsent()) {
       return { ok: false, code: "buyer_consent_required" };
     }
+    const fulfillment = this.getCheckoutFulfillment();
+    if (!fulfillment) {
+      return { ok: false, code: "fulfillment_required" };
+    }
     if (!this.deps.db) {
       return { ok: false, code: "storage_unavailable" };
     }
@@ -684,11 +721,12 @@ export class CommerceService {
       this.deps.meta.get(META_SOURCE_CHANNEL)?.trim() || "web";
     const linkedStore =
       this.deps.meta.get(META_LINKED_STORE_CONVERSATION)?.trim() || null;
+    const fulfillmentJson = JSON.stringify(fulfillment);
 
     await this.deps.db
       .prepare(
-        `INSERT INTO sales_orders (id, org_id, bot_id, conversation_id, status, buyer_type, buyer_json, currency, subtotal_cents, lines_json, summary, public_ref, public_access_token, source_channel, linked_store_conversation_id, cart_fingerprint)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sales_orders (id, org_id, bot_id, conversation_id, status, buyer_type, buyer_json, currency, subtotal_cents, lines_json, summary, public_ref, public_access_token, source_channel, linked_store_conversation_id, cart_fingerprint, fulfillment_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         orderId,
@@ -707,6 +745,7 @@ export class CommerceService {
         sourceChannel,
         linkedStore,
         fp,
+        fulfillmentJson,
       )
       .run();
 

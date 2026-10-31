@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import type { CommerceBuyer } from "@chatbot/domain";
 
 type Fulfillment = {
   mode: "pickup" | "delivery";
@@ -19,6 +20,7 @@ type Order = {
   currency: string;
   subtotal_cents: number;
   summary: string;
+  buyer_json: string | null;
   fulfillment_json: string | null;
   lines_json: string | null;
   created_at: string;
@@ -34,6 +36,32 @@ function parseFulfillment(raw: string | null): Fulfillment | null {
   } catch {
     return null;
   }
+}
+
+function parseBuyer(raw: string | null): CommerceBuyer | null {
+  if (!raw?.trim()) return null;
+  try {
+    return JSON.parse(raw) as CommerceBuyer;
+  } catch {
+    return null;
+  }
+}
+
+function formatBuyerLines(buyer: CommerceBuyer | null): string[] {
+  if (!buyer) return [];
+  const lines: string[] = [];
+  if (buyer.name?.trim()) lines.push(`Nombre: ${buyer.name.trim()}`);
+  if (buyer.documentId?.trim()) {
+    lines.push(`Documento: ${buyer.documentId.trim()}`);
+  }
+  if (buyer.phone?.trim()) lines.push(`Teléfono: ${buyer.phone.trim()}`);
+  if (buyer.city?.trim()) lines.push(`Ciudad: ${buyer.city.trim()}`);
+  if (buyer.address?.trim()) lines.push(`Dirección: ${buyer.address.trim()}`);
+  if (buyer.companyName?.trim()) {
+    lines.push(`Empresa: ${buyer.companyName.trim()}`);
+  }
+  if (buyer.taxId?.trim()) lines.push(`NIT: ${buyer.taxId.trim()}`);
+  return lines;
 }
 
 function startOfTodayLocal(): string {
@@ -260,6 +288,20 @@ export default function OrdersPage() {
               </p>
             ) : null}
             {(() => {
+              const buyerLines = formatBuyerLines(parseBuyer(selected.buyer_json));
+              if (!buyerLines.length) return null;
+              return (
+                <div className="mt-4 rounded-md border border-[var(--border)] p-3 text-sm">
+                  <p className="font-medium">Comprador</p>
+                  <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+                    {buyerLines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+            {(() => {
               const f = parseFulfillment(selected.fulfillment_json);
               if (!f) {
                 return (
@@ -273,7 +315,12 @@ export default function OrdersPage() {
                   <p className="font-medium">
                     {f.mode === "pickup" ? "Recoger en tienda" : "Envío a domicilio"}
                   </p>
-                  {f.mode === "delivery" && (
+                  {f.mode === "pickup" ? (
+                    <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+                      {f.fullName ? <li>Nombre: {f.fullName}</li> : null}
+                      {f.phone ? <li>Tel: {f.phone}</li> : null}
+                    </ul>
+                  ) : (
                     <ul className="mt-2 space-y-1 text-xs text-[var(--muted)]">
                       <li>Nombre: {f.fullName}</li>
                       <li>Tel: {f.phone}</li>
