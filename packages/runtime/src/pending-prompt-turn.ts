@@ -1,4 +1,5 @@
 import {
+  DESK_CMD_CONSENT,
   isReadOnlyPendingDeskAction,
   parsePendingPrompt,
   PENDING_PROMPT_META_KEY,
@@ -59,7 +60,10 @@ export function applyPendingVerdict(
 ): PendingPromptResolution {
   clearPendingPrompt(setMeta);
   if (verdict === "accept") {
-    if (isReadOnlyPendingDeskAction(pending.action)) {
+    if (
+      isReadOnlyPendingDeskAction(pending.action) ||
+      pending.action.trim() === DESK_CMD_CONSENT
+    ) {
       return { type: "accept", deskCommand: pending.action };
     }
     return {

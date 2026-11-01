@@ -1081,7 +1081,7 @@ export function HostedPublicChat({
           return;
         }
         if (
-          requiresTurnstile &&
+          (requiresTurnstile || code === "turnstile_required") &&
           turnstileSiteKey &&
           !turnstileToken
         ) {

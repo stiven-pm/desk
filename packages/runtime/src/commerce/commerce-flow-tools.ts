@@ -5,6 +5,7 @@ import type { LlmToolSchema } from "../integrations/types";
 export const COMMERCE_FLOW_LLM_TOOL_NAMES = [
   "commerce_view_cart",
   "commerce_provide_buyer_fields",
+  "commerce_confirm_buyer_consent",
   "commerce_set_fulfillment",
   "commerce_begin_payment",
 ] as const;
@@ -49,6 +50,16 @@ export const COMMERCE_FLOW_LLM_TOOLS: LlmToolSchema[] = [
           notes: { type: "string" },
         },
       },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "commerce_confirm_buyer_consent",
+      description:
+        "Record Ley 1581 / buyer data consent after commerce_begin_payment or commerce_provide_buyer_fields returned ask_consent. " +
+        "Use when the visitor taps Acepto or clearly accepts processing their data for checkout.",
+      parameters: { type: "object", properties: {} },
     },
   },
   {

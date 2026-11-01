@@ -52,8 +52,13 @@ import {
   isCommerceToolName,
 } from "../commerce/commerce-tools";
 import { isCommerceFlowToolName } from "../commerce/commerce-flow-tools";
-import { appendCheckoutPaymentDeskUi } from "../commerce/commerce-ui";
+import { appendCheckoutPaymentDeskUi, buildBuyerConsentLead } from "../commerce/commerce-ui";
 import { NATIVE_COMMERCE_LEAD } from "@chatbot/domain";
+import {
+  isCommerceToolProseLeak,
+  parseCommerceToolProseLine,
+  parseGlmXmlCommerceToolCall,
+} from "../commerce/parse-commerce-tool-prose";
 import {
   mergeProductCatalogPickerFromToolProducts,
   type CommerceToolProduct,
@@ -286,6 +291,7 @@ function applyFlowToolSideEffects(
   state: {
     commerceCartView: boolean;
     commerceCheckoutStep: boolean;
+    commerceConsentStep: boolean;
     flowAssistantAppend: string;
   },
 ): void {
@@ -303,13 +309,19 @@ function applyFlowToolSideEffects(
         state.flowAssistantAppend = data.assistantHint;
       }
     }
+    if (data.step === "ask_consent") {
+      state.commerceConsentStep = true;
+      state.flowAssistantAppend = buildBuyerConsentLead();
+    }
     if (
       toolName === "commerce_begin_payment" ||
+      toolName === "commerce_confirm_buyer_consent" ||
       toolName === "commerce_provide_buyer_fields" ||
       toolName === "commerce_set_fulfillment"
     ) {
       if (data.step === "blocked" || data.step === "link_ready") {
         state.commerceCheckoutStep = true;
+        state.commerceConsentStep = false;
       }
       if (data.step === "link_ready" && data.checkoutUrl) {
         state.flowAssistantAppend = appendCheckoutPaymentDeskUi(
@@ -505,6 +517,7 @@ async function finishAgentTurn(args: {
   checkoutFlowPhase: CheckoutPhase;
   commerceCartView?: boolean;
   commerceCheckoutStep?: boolean;
+  commerceConsentStep?: boolean;
   flowAssistantAppend?: string;
   agentDegraded?: boolean;
   integrationToolsUsed?: boolean;
@@ -525,7 +538,9 @@ async function finishAgentTurn(args: {
       text = VISITOR_CHAT_DEGRADED_NO_TOOLS;
     }
     const append = args.flowAssistantAppend?.trim();
-    if (append) {
+    if (args.commerceConsentStep && append) {
+      text = append;
+    } else if (append) {
       if (!text) text = append;
       else if (
         args.commerceCartView &&
@@ -549,7 +564,8 @@ async function finishAgentTurn(args: {
       commerceCartMutated: args.commerceCartMutatedThisTurn,
       commerceCartView: args.commerceCartView,
       commerceCheckoutStep: args.commerceCheckoutStep,
-      agentRescueFailure: agentDegraded,
+      commerceConsentStep: args.commerceConsentStep,
+      agentRescueFailure: agentDegraded && !args.commerceConsentStep,
       integrationToolsUsed: args.integrationToolsUsed,
     });
     if (args.escalateToHuman) {
@@ -600,16 +616,40 @@ export async function runAgentWithTools(
   const flowFx = {
     commerceCartView: false,
     commerceCheckoutStep: false,
+    commerceConsentStep: false,
     flowAssistantAppend: "",
     escalateToHuman: false,
   };
   const visitorToolAllow = new Set<string>([DESK_AGENT_TOOL.visitorMessage]);
+  let commerceToolNameSet = new Set<string>();
   const unwrapVisitorText = (raw: string) =>
     extractVisitorFacingText(raw, visitorToolAllow);
-  const sanitize = (raw: string) =>
-    validateAssistantMessage(unwrapVisitorText(raw), {
+  const sanitize = (raw: string) => {
+    if (commerceToolNameSet.size) {
+      const glm = parseGlmXmlCommerceToolCall(raw, commerceToolNameSet);
+      if (glm?.name === DESK_AGENT_TOOL.visitorMessage) {
+        const text = String(glm.args.text ?? "").trim();
+        if (text) {
+          return validateAssistantMessage(text, {
+            allowedHostComponents: params.allowedHostComponents,
+          });
+        }
+      }
+      if (glm && glm.name !== DESK_AGENT_TOOL.visitorMessage) {
+        return "";
+      }
+    }
+    const unwrapped = unwrapVisitorText(raw);
+    if (
+      commerceToolNameSet.size &&
+      isCommerceToolProseLeak(unwrapped, commerceToolNameSet)
+    ) {
+      return "";
+    }
+    return validateAssistantMessage(unwrapped, {
       allowedHostComponents: params.allowedHostComponents,
     });
+  };
   const db = env.DB;
   if (!db) {
     const turns: AgentChatTurn[] = params.chatHistory?.length
@@ -635,6 +675,11 @@ export async function runAgentWithTools(
   );
 
   const commerceEnabled = Boolean(params.commerceService);
+  commerceToolNameSet = new Set<string>(
+    commerceEnabled
+      ? commerceLlmToolsForAgent({ agentFlowTools }).map((t) => t.function.name)
+      : [],
+  );
 
   if (!allTools.length && !commerceEnabled) {
     return runAgentWithoutTools(env, params, sanitize);
@@ -712,10 +757,10 @@ export async function runAgentWithTools(
     llmTools.length
       ? [
           "Tools in this session: use them when the visitor needs real data (do not repeat generic tone from the system prompt).",
-          `Turn contract: visitor-facing text via ${DESK_AGENT_TOOL.visitorMessage}({ text }). Missing-order reports: empathy + ask RK/name/document + commerce_get_order; do not call ${DESK_AGENT_TOOL.escalateHuman} on the first report. Hand off with ${DESK_AGENT_TOOL.escalateHuman}({ text }) only after triage when refund/resend/manual fix is needed. Never ask the visitor to press Talk to a person.`,
+          `Turn contract: visitor-facing text via ${DESK_AGENT_TOOL.visitorMessage}({ text }). Missing-order reports: empathy + ask RK/name/document + commerce_get_order; do not call ${DESK_AGENT_TOOL.escalateHuman} on the first report. Hand off with ${DESK_AGENT_TOOL.escalateHuman}({ text }) only after triage when refund/resend/manual fix is needed. Never mention SMS/data messaging costs. Never ask the visitor to press Talk to a person.`,
           commerceEnabled
             ? agentFlowTools
-              ? `Native store: ${COMMERCE_TOOL.searchProducts} (browse/search), ${COMMERCE_TOOL.cartGet}, ${COMMERCE_TOOL.cartAdd}, ${COMMERCE_TOOL.cartUpdate}, ${COMMERCE_TOOL.getProductDetails}, ${COMMERCE_TOOL.getOrder}; checkout ${COMMERCE_TOOL.viewCart}, ${COMMERCE_TOOL.provideBuyerFields}, ${COMMERCE_TOOL.setFulfillment}, ${COMMERCE_TOOL.beginPayment}. Payment gateways and ERP orders outside native Desk: desk_codemode. After search, attach catalog UI type ${DESK_UI_BLOCK_TYPE.productCatalog}; do not dump catalog in prose.`
+              ? `Native store: ${COMMERCE_TOOL.searchProducts} (browse/search), ${COMMERCE_TOOL.cartGet}, ${COMMERCE_TOOL.cartAdd}, ${COMMERCE_TOOL.cartUpdate}, ${COMMERCE_TOOL.getProductDetails}, ${COMMERCE_TOOL.getOrder}; checkout ${COMMERCE_TOOL.viewCart}, ${COMMERCE_TOOL.provideBuyerFields}, ${COMMERCE_TOOL.confirmBuyerConsent}, ${COMMERCE_TOOL.setFulfillment}, ${COMMERCE_TOOL.beginPayment}. After ask_consent, call ${COMMERCE_TOOL.confirmBuyerConsent} when the visitor accepts; do not claim a payment link until step is link_ready. Payment gateways and ERP orders outside native Desk: desk_codemode. After search, attach catalog UI type ${DESK_UI_BLOCK_TYPE.productCatalog}; do not dump catalog in prose.`
               : `Native store: ${COMMERCE_TOOL.searchProducts} (browse/search), ${COMMERCE_TOOL.cartGet}, ${COMMERCE_TOOL.cartAdd}, ${COMMERCE_TOOL.cartUpdate}, ${COMMERCE_TOOL.setBuyer}, ${COMMERCE_TOOL.startCheckout}, ${COMMERCE_TOOL.getOrder}. After search, catalog UI type ${DESK_UI_BLOCK_TYPE.productCatalog}.`
             : "",
           useIntegrationCodeMode
@@ -835,6 +880,7 @@ export async function runAgentWithTools(
           pendingPrompt: Boolean(pendingPromptOut),
           commerceCartView: flowFx.commerceCartView,
           commerceCheckoutStep: flowFx.commerceCheckoutStep,
+          commerceConsentStep: flowFx.commerceConsentStep,
           flowAssistantAppend: flowFx.flowAssistantAppend,
           checkoutFlowPhase,
           integrationToolsUsed: integrationToolsUsedThisTurn,
@@ -866,6 +912,7 @@ export async function runAgentWithTools(
         pendingPrompt: Boolean(pendingPromptOut),
         commerceCartView: flowFx.commerceCartView,
         commerceCheckoutStep: flowFx.commerceCheckoutStep,
+        commerceConsentStep: flowFx.commerceConsentStep,
         flowAssistantAppend: flowFx.flowAssistantAppend,
         checkoutFlowPhase,
         integrationToolsUsed: integrationToolsUsedThisTurn,
@@ -920,6 +967,60 @@ export async function runAgentWithTools(
     );
 
     if (!result.toolCalls?.length) {
+      const leaked =
+        parseCommerceToolProseLine(result.content, commerceToolNameSet) ??
+        parseGlmXmlCommerceToolCall(result.content, commerceToolNameSet);
+      if (leaked && params.commerceService && llmTools.length) {
+        usedTools = true;
+        const callId = crypto.randomUUID();
+        messages.push({
+          role: "assistant",
+          content: result.content,
+          tool_calls: [
+            {
+              id: callId,
+              type: "function",
+              function: {
+                name: leaked.name,
+                arguments: JSON.stringify(leaked.args),
+              },
+            },
+          ],
+        });
+        let output: string;
+        try {
+          output = await executeCommerceTool(
+            params.commerceService,
+            leaked.name,
+            leaked.args,
+          );
+          if (leaked.name === "commerce_search_products") {
+            commerceSearchUsedThisTurn = true;
+            lastCommerceSearch = parseCommerceSearchProducts(output);
+          }
+          if (
+            leaked.name === "commerce_cart_add" ||
+            leaked.name === "commerce_cart_update" ||
+            leaked.name === "commerce_cart_remove"
+          ) {
+            commerceCartMutatedThisTurn = true;
+          }
+          applyFlowToolSideEffects(leaked.name, output, flowFx);
+        } catch (e) {
+          output = JSON.stringify({
+            ok: false,
+            error: "tool_failed",
+            detail: e instanceof Error ? e.message : String(e),
+          });
+        }
+        messages.push({
+          role: "tool",
+          content: output,
+          tool_call_id: callId,
+          name: leaked.name,
+        });
+        continue;
+      }
       const finalText = sanitize(result.content).trim();
       if (finalText && (!llmTools.length || result.degraded)) {
         return agentResultWithPending(
@@ -941,6 +1042,7 @@ export async function runAgentWithTools(
           pendingPrompt: Boolean(pendingPromptOut),
           commerceCartView: flowFx.commerceCartView,
           commerceCheckoutStep: flowFx.commerceCheckoutStep,
+          commerceConsentStep: flowFx.commerceConsentStep,
           flowAssistantAppend: flowFx.flowAssistantAppend,
           checkoutFlowPhase,
           agentDegraded: result.degraded,
@@ -1195,6 +1297,7 @@ export async function runAgentWithTools(
           pendingPrompt: Boolean(pendingPromptOut),
           commerceCartView: flowFx.commerceCartView,
           commerceCheckoutStep: flowFx.commerceCheckoutStep,
+          commerceConsentStep: flowFx.commerceConsentStep,
           flowAssistantAppend: flowFx.flowAssistantAppend,
           checkoutFlowPhase,
           integrationToolsUsed: integrationToolsUsedThisTurn,
@@ -1244,6 +1347,7 @@ export async function runAgentWithTools(
         pendingPrompt: Boolean(pendingPromptOut),
         commerceCartView: flowFx.commerceCartView,
         commerceCheckoutStep: flowFx.commerceCheckoutStep,
+        commerceConsentStep: flowFx.commerceConsentStep,
         flowAssistantAppend: flowFx.flowAssistantAppend,
         checkoutFlowPhase,
         integrationToolsUsed: integrationToolsUsedThisTurn,
@@ -1299,6 +1403,7 @@ export async function runAgentWithTools(
     pendingPrompt: Boolean(pendingPromptOut),
     commerceCartView: flowFx.commerceCartView,
     commerceCheckoutStep: flowFx.commerceCheckoutStep,
+    commerceConsentStep: flowFx.commerceConsentStep,
     flowAssistantAppend: flowFx.flowAssistantAppend,
     checkoutFlowPhase,
     integrationToolsUsed: integrationToolsUsedThisTurn,

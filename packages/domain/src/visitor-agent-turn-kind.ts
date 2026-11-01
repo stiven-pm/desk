@@ -17,6 +17,7 @@ export type InferAgentVisitorTurnKindInput = {
   commerceCartMutated: boolean;
   commerceCartView?: boolean;
   commerceCheckoutStep?: boolean;
+  commerceConsentStep?: boolean;
   agentRescueFailure: boolean;
   /** HTTP/MCP/integración/meta-tool ejecutada en el turno (SAC, pedidos, ERP). */
   integrationToolsUsed?: boolean;
@@ -25,6 +26,7 @@ export type InferAgentVisitorTurnKindInput = {
 export function inferAgentVisitorTurnKind(
   input: InferAgentVisitorTurnKindInput,
 ): VisitorTurnKind {
+  if (input.commerceConsentStep) return "buyer_consent";
   if (input.agentRescueFailure) return "agent_struggling";
   if (input.pendingPrompt) return "pending_offer";
   if (input.commerceCheckoutStep) return "checkout";

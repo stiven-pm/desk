@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { CommerceBuyer } from "@chatbot/domain";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { PromptDialog } from "@/components/prompt-dialog";
 
 type Fulfillment = {
   mode: "pickup" | "delivery";
@@ -94,6 +96,14 @@ function formatLines(linesJson: string | null): string {
   }
 }
 
+function formatOrderStatus(status: string): string {
+  if (status === "paid") return "Pagado";
+  if (status === "pending_fulfillment") return "Por entregar";
+  if (status === "fulfilled") return "Entregado";
+  if (status === "cancelled") return "Cancelado";
+  return status;
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [todayOnly, setTodayOnly] = useState(false);
@@ -107,6 +117,8 @@ export default function OrdersPage() {
   const [editAddress, setEditAddress] = useState("");
   const [editCity, setEditCity] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [noteTargetId, setNoteTargetId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -170,8 +182,7 @@ export default function OrdersPage() {
     <main className="mx-auto max-w-2xl px-6 py-8">
       <h1 className="text-xl font-semibold">Ventas</h1>
       <p className="mt-1 text-xs text-[var(--muted)]">
-        Solo ventas con pago confirmado. Orden de llegada, filtros por fecha y tipo de
-        entrega.
+        Pedidos pagados y su estado (incluye cancelados; no suman en métricas de ingreso).
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -253,7 +264,7 @@ export default function OrdersPage() {
 
       <ul className="mt-6 space-y-2">
         {orders.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">No hay ventas confirmadas con estos filtros.</p>
+          <p className="text-sm text-[var(--muted)]">No hay pedidos con estos filtros.</p>
         ) : null}
         {orders.map((o) => {
           const fulfillment = parseFulfillment(o.fulfillment_json);
@@ -273,7 +284,9 @@ export default function OrdersPage() {
                   <span className="font-medium">
                     {o.public_ref ?? o.id.slice(0, 8)}
                   </span>
-                  <span className="text-xs text-[var(--muted)]">{deliveryLabel}</span>
+                  <span className="text-xs text-[var(--muted)]">
+                    {formatOrderStatus(o.status)} · {deliveryLabel}
+                  </span>
                 </div>
                 <p className="mt-1 text-xs text-[var(--muted)] line-clamp-2">
                   {o.summary || formatLines(o.lines_json)}
@@ -316,6 +329,7 @@ export default function OrdersPage() {
               {selected.currency}
             </p>
             <p className="text-xs text-[var(--muted)]">
+              {formatOrderStatus(selected.status)} ·{" "}
               {new Date(selected.created_at).toLocaleString("es-CO")}
             </p>
             {formatLines(selected.lines_json) ? (
@@ -404,23 +418,15 @@ export default function OrdersPage() {
                 type="button"
                 disabled={saving || selected.status === "cancelled"}
                 className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-                onClick={() => {
-                  if (!window.confirm("¿Cancelar este pedido?")) return;
-                  void patchOrder(selected.id, { status: "cancelled" });
-                }}
+                onClick={() => setCancelTargetId(selected.id)}
               >
-                Cancelar
+                Cancelar pedido
               </button>
               <button
                 type="button"
                 disabled={saving}
                 className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-                onClick={() => {
-                  const note = window.prompt("Novedad del pedido");
-                  if (note?.trim()) {
-                    void patchOrder(selected.id, { note: note.trim() });
-                  }
-                }}
+                onClick={() => setNoteTargetId(selected.id)}
               >
                 Novedad
               </button>
@@ -472,6 +478,37 @@ export default function OrdersPage() {
       {error && (
         <p className="mt-4 text-xs text-red-600" role="alert">{error}</p>
       )}
+
+      <ConfirmDialog
+        open={cancelTargetId !== null}
+        title="Cancelar pedido"
+        message="El pedido seguirá en la lista como cancelado y dejará de contar en ingresos."
+        confirmLabel="Cancelar pedido"
+        destructive
+        busy={saving}
+        onCancel={() => setCancelTargetId(null)}
+        onConfirm={() => {
+          const id = cancelTargetId;
+          if (!id) return;
+          setCancelTargetId(null);
+          void patchOrder(id, { status: "cancelled" });
+        }}
+      />
+
+      <PromptDialog
+        open={noteTargetId !== null}
+        title="Novedad del pedido"
+        placeholder="Ej. cliente pidió cambio de dirección"
+        confirmLabel="Guardar"
+        busy={saving}
+        onCancel={() => setNoteTargetId(null)}
+        onConfirm={(note) => {
+          const id = noteTargetId;
+          if (!id) return;
+          setNoteTargetId(null);
+          void patchOrder(id, { note });
+        }}
+      />
     </main>
   );
 }

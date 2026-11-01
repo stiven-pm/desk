@@ -479,9 +479,9 @@ export async function tryNativeCommerceTurn(args: {
   const deskCmd = parseInternalDeskCommand(trimmed);
   if (
     agentFlowTools &&
+    !turnstileToken?.trim() &&
     deskCmd &&
-    (deskCmd.kind === "consent" ||
-      deskCmd.kind === "fulfillment_pickup" ||
+    (deskCmd.kind === "fulfillment_pickup" ||
       deskCmd.kind === "fulfillment_delivery" ||
       deskCmd.kind === "confirm_price" ||
       deskCmd.kind === "pay")

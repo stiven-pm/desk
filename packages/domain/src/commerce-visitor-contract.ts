@@ -31,6 +31,7 @@ export const COMMERCE_TOOL = {
   offerAction: "commerce_offer_action",
   viewCart: "commerce_view_cart",
   provideBuyerFields: "commerce_provide_buyer_fields",
+  confirmBuyerConsent: "commerce_confirm_buyer_consent",
   setFulfillment: "commerce_set_fulfillment",
   beginPayment: "commerce_begin_payment",
 } as const;

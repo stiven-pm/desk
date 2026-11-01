@@ -134,6 +134,40 @@ export type PublishedProductSearchResult = {
   relaxed?: boolean;
 };
 
+function isFtsUnavailableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /products_fts|no such column:\s*fts|malformed MATCH/i.test(msg);
+}
+
+async function queryPublishedByLikeTokens(
+  db: D1Database,
+  orgId: string,
+  tokens: string[],
+  limit: number,
+  match: "and" | "or",
+): Promise<NativeProductRow[]> {
+  if (!tokens.length) return [];
+  const tokenClauses = tokens.map(
+    () =>
+      `(lower(p.name) LIKE ? OR lower(coalesce(p.description, '')) LIKE ? OR lower(coalesce(p.category, '')) LIKE ?)`,
+  );
+  const whereTokens =
+    match === "and" ? tokenClauses.join(" AND ") : tokenClauses.join(" OR ");
+  const binds: (string | number)[] = [orgId];
+  for (const t of tokens) {
+    const pat = `%${t.replace(/[%_\\]/g, "\\$&")}%`;
+    binds.push(pat, pat, pat);
+  }
+  binds.push(limit);
+  const sql = `SELECT ${PRODUCT_SELECT}
+       FROM products p
+       WHERE p.org_id = ? AND p.status = 'published' AND (${whereTokens})
+       ORDER BY p.featured DESC, p.updated_at DESC
+       LIMIT ?`;
+  const rows = await db.prepare(sql).bind(...binds).all<NativeProductRow>();
+  return (rows.results ?? []).map(normalizeProductRow);
+}
+
 async function queryPublishedByFts(
   db: D1Database,
   orgId: string,
@@ -147,11 +181,27 @@ async function queryPublishedByFts(
        WHERE p.org_id = ? AND p.status = 'published' AND fts MATCH ?
        ORDER BY p.featured DESC, p.updated_at DESC
        LIMIT ?`;
-  const rows = await db
-    .prepare(sql)
-    .bind(orgId, matchQuery, limit)
-    .all<NativeProductRow>();
-  return (rows.results ?? []).map(normalizeProductRow);
+  try {
+    const rows = await db
+      .prepare(sql)
+      .bind(orgId, matchQuery, limit)
+      .all<NativeProductRow>();
+    return (rows.results ?? []).map(normalizeProductRow);
+  } catch (err) {
+    if (!isFtsUnavailableError(err)) throw err;
+    const tokens = matchQuery
+      .split(/\s+(?:OR\s+)?/i)
+      .map((t) => t.replace(/^"|"$/g, "").replace(/""/g, '"').trim())
+      .filter(Boolean);
+    if (!tokens.length) return [];
+    return queryPublishedByLikeTokens(
+      db,
+      orgId,
+      tokens,
+      limit,
+      /\bor\b/i.test(matchQuery) ? "or" : "and",
+    );
+  }
 }
 
 async function queryPublishedBySearchTokens(
@@ -163,7 +213,12 @@ async function queryPublishedBySearchTokens(
 ): Promise<NativeProductRow[]> {
   const matchQuery =
     match === "and" ? buildFtsAndMatchQuery(tokens) : buildFtsOrMatchQuery(tokens);
-  return queryPublishedByFts(db, orgId, matchQuery, limit);
+  try {
+    return await queryPublishedByFts(db, orgId, matchQuery, limit);
+  } catch (err) {
+    if (!isFtsUnavailableError(err)) throw err;
+    return queryPublishedByLikeTokens(db, orgId, tokens, limit, match);
+  }
 }
 
 export async function listPublishedProductsBrowse(

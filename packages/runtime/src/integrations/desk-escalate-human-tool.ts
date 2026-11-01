@@ -16,7 +16,7 @@ export function deskEscalateHumanLlmTool(): LlmToolSchema {
           text: {
             type: "string",
             description:
-              "Short message to the visitor confirming a human will continue here.",
+              "Short message to the visitor confirming a human will continue here. Do not mention SMS or messaging costs.",
           },
         },
         required: ["text"],

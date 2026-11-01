@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { actionErrorLines } from "@/lib/api-error";
+import { InboxThreadBubble } from "@/components/inbox-chat-message";
 
 type InboxItem = {
   id: string;
@@ -122,7 +123,7 @@ export function DeskInboxPanel() {
   ): string {
     if (item.display_contact?.trim()) return item.display_contact;
     if (item.visitor_id?.startsWith("wa:")) return `+${item.visitor_id.slice(3)}`;
-    return `Chat ${item.conversation_id.slice(0, 8)}`;
+    return `Visitante ${item.conversation_id.slice(0, 8)}`;
   }
 
   function phaseLabel(raw: string): string {
@@ -142,121 +143,123 @@ export function DeskInboxPanel() {
       all.findIndex((x) => x.conversation_id === item.conversation_id) === index,
   );
 
-  return (
-    <section className="flex min-h-[min(720px,calc(100vh-8rem))] flex-1 flex-col rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)]">
-      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(220px,320px)_1fr]">
-        <div className="min-h-[10rem] overflow-y-auto border-b border-[var(--border)] md:max-h-none md:border-b-0 md:border-r">
-          {loading ? (
-            <p className="p-3 text-xs text-[var(--muted)]">Cargando…</p>
-          ) : visibleItems.length === 0 ? (
-            <p className="p-3 text-sm text-[var(--muted)]">Nadie esperando asesor.</p>
-          ) : (
-            <ul>
-              {visibleItems.map((item) => {
-                const active = selectedId === item.conversation_id;
-                return (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(item.conversation_id)}
-                      className={[
-                        "w-full px-3 py-2.5 text-left text-xs border-b border-[var(--border)] last:border-0",
-                        active ? "bg-[var(--muted-bg)]" : "hover:bg-[var(--muted-bg)]/60",
-                      ].join(" ")}
-                    >
-                      <span className="font-medium block truncate">
-                        {listLabel(item)}
-                      </span>
-                      <span className="text-[var(--muted)] line-clamp-1">
-                        {inboxPreview(item.summary)}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+  const headerTitle =
+    contactLabel ||
+    (selectedId
+      ? listLabel(
+          visibleItems.find((i) => i.conversation_id === selectedId) ?? {
+            conversation_id: selectedId,
+            visitor_id: null,
+          },
+        )
+      : "");
 
-        <div className="flex min-h-0 flex-col p-4">
+  return (
+    <section className="flex h-[min(720px,calc(100vh-8rem))] min-h-[480px] flex-1 flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-white">
+      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(220px,300px)_1fr]">
+        <aside className="flex min-h-0 flex-col border-b border-[var(--border)] md:border-b-0 md:border-r">
+          <div className="shrink-0 border-b border-[var(--border)] px-3 py-2.5 text-sm font-semibold text-[#2f3941]">
+            Bandeja
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {loading ? (
+              <p className="p-3 text-xs text-[var(--muted)]">Cargando…</p>
+            ) : visibleItems.length === 0 ? (
+              <p className="p-3 text-sm text-[var(--muted)]">Nadie esperando asesor.</p>
+            ) : (
+              <ul>
+                {visibleItems.map((item) => {
+                  const active = selectedId === item.conversation_id;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(item.conversation_id)}
+                        className={[
+                          "w-full border-b border-[var(--border)] px-3 py-2.5 text-left text-xs last:border-0",
+                          active ? "bg-[#edf0f2]" : "hover:bg-[#f8f9f9]",
+                        ].join(" ")}
+                      >
+                        <span className="block truncate font-medium">
+                          {listLabel(item)}
+                        </span>
+                        <span className="line-clamp-1 text-[var(--muted)]">
+                          {inboxPreview(item.summary)}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </aside>
+
+        <div className="flex min-h-0 flex-col bg-white">
           {!selectedId ? (
             <p className="flex flex-1 items-center justify-center text-sm text-[var(--muted)]">
               Elige un chat.
             </p>
           ) : (
             <>
-              <p className="mb-2 shrink-0 text-sm text-[var(--muted)]">
-                {contactLabel ||
-                  (selectedId
-                    ? listLabel(
-                        visibleItems.find((i) => i.conversation_id === selectedId) ?? {
-                          conversation_id: selectedId,
-                          visitor_id: null,
-                        },
-                      )
-                    : "")}
-                {phase ? ` · ${phaseLabel(phase)}` : ""}
-              </p>
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--muted-bg)]/30 p-3 text-sm">
+              <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#d8dcde] bg-white px-4 py-3">
+                <h2 className="min-w-0 truncate text-base font-semibold text-[#2f3941]">
+                  {headerTitle}
+                </h2>
+                {phase ? (
+                  <span className="shrink-0 text-xs text-[#68737d]">
+                    {phaseLabel(phase)}
+                  </span>
+                ) : null}
+              </header>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white p-4">
                 {messages.length === 0 ? (
-                  <p className="text-[var(--muted)]">Sin mensajes cargados.</p>
+                  <p className="text-sm text-[#68737d]">Sin mensajes cargados.</p>
                 ) : (
                   messages.map((m, i) => (
-                    <div
-                      key={i}
-                      className={
-                        m.role === "user"
-                          ? "ml-auto max-w-[90%] rounded-md bg-[var(--card)] px-2 py-1 border border-[var(--border)]"
-                          : "mr-auto max-w-[90%] rounded-md px-2 py-1 bg-[var(--card)]"
-                      }
-                    >
-                      <span className="text-[10px] text-[var(--muted)] uppercase">
-                        {m.role === "user"
-                          ? "Visitante"
-                          : m.role === "human"
-                            ? "Tú"
-                            : "IA"}
-                      </span>
-                      <p className="whitespace-pre-wrap">{m.text}</p>
-                    </div>
+                    <InboxThreadBubble key={i} role={m.role} text={m.text} />
                   ))
                 )}
               </div>
-              {error ? (
-                <p className="mt-2 text-xs text-red-600">{error}</p>
-              ) : null}
-              <div className="mt-3 flex shrink-0 flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={dismissing || sending}
-                  onClick={() => void dismissWithoutReply()}
-                  className="shrink-0 rounded-md border border-[var(--border)] px-2 py-1.5 text-xs text-[var(--muted)] hover:bg-[var(--muted-bg)] disabled:opacity-50"
-                >
-                  Cerrar
-                </button>
-                <input
-                  type="text"
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  placeholder="Escribe al cliente…"
-                  className="min-w-0 flex-1 rounded-md border border-[var(--border)] px-2 py-1.5 text-sm"
-                  disabled={sending}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendReply();
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={sending || !reply.trim()}
-                  onClick={() => void sendReply()}
-                  className="shrink-0 rounded-md bg-[var(--foreground)] px-3 py-1.5 text-xs font-medium text-[var(--background)] disabled:opacity-50"
-                >
-                  Enviar
-                </button>
-              </div>
+
+              <footer className="shrink-0 border-t border-[#d8dcde] bg-white p-3">
+                {error ? (
+                  <p className="mb-2 text-xs text-red-600">{error}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={dismissing || sending}
+                    onClick={() => void dismissWithoutReply()}
+                    className="shrink-0 rounded-md border border-[#d8dcde] px-2.5 py-2 text-xs text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
+                  >
+                    Cerrar
+                  </button>
+                  <input
+                    type="text"
+                    value={reply}
+                    onChange={(e) => setReply(e.target.value)}
+                    placeholder="Escribe al cliente…"
+                    className="min-w-0 flex-1 rounded-md border border-[#d8dcde] px-3 py-2 text-sm"
+                    disabled={sending}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendReply();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={sending || !reply.trim()}
+                    onClick={() => void sendReply()}
+                    className="shrink-0 rounded-md bg-[#2f3941] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    Enviar
+                  </button>
+                </div>
+              </footer>
             </>
           )}
         </div>

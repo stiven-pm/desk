@@ -36,7 +36,12 @@ export async function advanceCheckout(
   if (missing.length) return { step: "ask_fields", fields: missing };
   if (!svc.hasBuyerConsent()) return { step: "ask_consent" };
   if (!svc.getCheckoutFulfillment()) {
-    return { step: "ask_fulfillment", options: ["pickup", "delivery"] };
+    const buyer = svc.getBuyer();
+    if (buyer?.address?.trim()) {
+      svc.setCheckoutFulfillment(svc.fulfillmentFromBuyer("delivery", buyer));
+    } else {
+      return { step: "ask_fulfillment", options: ["pickup", "delivery"] };
+    }
   }
 
   const r = await svc.startCheckout(opts);

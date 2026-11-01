@@ -82,10 +82,11 @@ import { handleCommerceDoRequest } from "./commerce/do-handlers";
 import { appendCartDeskUiFence } from "./commerce/commerce-ui";
 import { tryNativeCommerceTurn } from "./commerce/native-commerce-turn";
 import {
-  resolvePendingPromptBeforeTurn,
-  resolvePendingPromptFromDeskOffer,
   clearPendingPrompt,
   PENDING_PROMPT_META_KEY,
+  readPendingPrompt,
+  resolvePendingPromptBeforeTurn,
+  resolvePendingPromptFromDeskOffer,
 } from "./pending-prompt-turn";
 import { signDeskUiInAssistantText } from "./commerce/desk-action-ui";
 import { applyVisitorAssistantActionHarness } from "./commerce/visitor-assistant-harness";
@@ -750,6 +751,18 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         title: commandText.slice(0, 200),
       });
       this.clearStruggleCount();
+      clearPendingPrompt((key, value) => this.setMeta(key, value));
+      uiTurnKind = "faq";
+    }
+
+    if (reply.pendingPrompt) {
+      this.setMeta(
+        PENDING_PROMPT_META_KEY,
+        serializePendingPrompt(reply.pendingPrompt),
+      );
+    } else if (uiTurnKind !== "pending_offer") {
+      clearPendingPrompt((key, value) => this.setMeta(key, value));
+    } else if (!readPendingPrompt((key) => this.getMeta(key))) {
       uiTurnKind = "faq";
     }
 

@@ -31,6 +31,20 @@ describe("inferAgentVisitorTurnKind", () => {
     ).toBe("agent_struggling");
   });
 
+  it("consent step gana sobre rescate degradado", () => {
+    expect(
+      inferAgentVisitorTurnKind({
+        visitorIntent: "general",
+        pendingPrompt: false,
+        hasProductCatalog: false,
+        commerceSearchUsed: false,
+        commerceCartMutated: false,
+        commerceConsentStep: true,
+        agentRescueFailure: true,
+      }),
+    ).toBe("buyer_consent");
+  });
+
   it("catálogo en respuesta → browse_catalog", () => {
     expect(
       inferAgentVisitorTurnKind({

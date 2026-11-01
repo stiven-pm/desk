@@ -568,7 +568,7 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
                       payment_evidence_meta_json, ops_log_json, created_at, updated_at
                FROM sales_orders
                WHERE org_id = ?
-                 AND status IN ('paid', 'pending_fulfillment')`;
+                 AND status IN ('paid', 'pending_fulfillment', 'fulfilled', 'cancelled')`;
     const binds: unknown[] = [auth.user.orgId];
 
     if (from) {

@@ -205,15 +205,16 @@ const COMMERCE_TOOL_DEFINITIONS: LlmToolSchema[] = [
     function: {
       name: "commerce_offer_action",
       description:
-        "Register a yes/no offer before asking the visitor (menu, cart, or pay). " +
-        "Call immediately before the question; runtime stores pending_prompt and may show signed buttons.",
+        "Register a yes/no offer before checkout confirmation — not for menu greetings. " +
+        "Use action pay when confirming payment; cart when offering to review the cart. " +
+        "Same turn as the question; runtime stores pending_prompt and shows Sí/No.",
       parameters: {
         type: "object",
         properties: {
           action: {
             type: "string",
             enum: ["menu", "cart", "pay"],
-            description: "Action the visitor may accept.",
+            description: "pay = proceed to checkout; cart = open cart; avoid menu in agent flow.",
           },
           offerSummary: {
             type: "string",
@@ -471,6 +472,18 @@ export async function executeCommerceTool(
         buyer,
         valid,
       });
+    }
+    case "commerce_confirm_buyer_consent": {
+      await svc.recordBuyerConsentAsync();
+      const { advance, flow } = await svc.advanceCheckoutFlow({
+        turnstileToken:
+          args.turnstileToken != null
+            ? String(args.turnstileToken)
+            : undefined,
+        confirmPriceChange: args.confirmPriceChange === true,
+        confirmCartChange: args.confirmCartChange === true,
+      });
+      return JSON.stringify(advanceResultToToolPayload(advance, flow.phase));
     }
     case "commerce_set_fulfillment": {
       const mode = args.mode === "delivery" ? "delivery" : "pickup";
