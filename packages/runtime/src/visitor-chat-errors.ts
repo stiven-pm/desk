@@ -17,6 +17,10 @@ export const VISITOR_CHAT_TOOLS_FAILED =
 export const VISITOR_CHAT_RESCUE_HONEST =
   "Tuve un problema técnico en este momento. ¿Qué prefieres hacer?";
 
+/** Escalera LLM paso 3: sin tools; no repetir copy del modelo que mencione botones genéricos. */
+export const VISITOR_CHAT_DEGRADED_NO_TOOLS =
+  "No pude completar la consulta en el sistema en este momento. Si quieres, te comunico con el equipo para revisarlo contigo.";
+
 /** Solo cuando el modelo no respondió tras reintentos (fallo real de servicio). */
 export function visitorMessageForLlmFailure(
   reason: "not_configured" | "http_error" | "timeout" | "empty_response",

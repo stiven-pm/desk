@@ -12,10 +12,10 @@ describe("buildVisitorStateBarChoices", () => {
       responseHasProductCatalog: false,
     });
     expect(items.some((i) => i.message === DESK_CMD_MENU)).toBe(true);
-    expect(items.some((i) => i.message === DESK_CMD_HUMAN)).toBe(true);
+    expect(items.some((i) => i.message === DESK_CMD_HUMAN)).toBe(false);
   });
 
-  it("incluye humano sin catálogo publicado", () => {
+  it("no incluye humano permanente sin catálogo", () => {
     const items = buildVisitorStateBarChoices({
       phase: "automated",
       cartLineCount: 0,
@@ -24,6 +24,6 @@ describe("buildVisitorStateBarChoices", () => {
       responseHasProductCatalog: false,
     });
     expect(items.some((i) => i.message === DESK_CMD_MENU)).toBe(false);
-    expect(items.some((i) => i.message === DESK_CMD_HUMAN)).toBe(true);
+    expect(items.some((i) => i.message === DESK_CMD_HUMAN)).toBe(false);
   });
 });

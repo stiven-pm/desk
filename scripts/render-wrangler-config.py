@@ -67,7 +67,17 @@ OPTIONAL_DEFAULTS = {
     "LLM_REQUEST_TIMEOUT_MS": ("45000", "45000"),
     "LLM_STREAM_ENABLED": ("true", "true"),
     "EMBEDDING_DIMENSIONS": ("1024", "1024"),
+    "AGENT_FLOW_TOOLS": ("1", "1"),
+    "AGENT_DRIVEN_WIZARD": ("1", "1"),
+    "INTEGRATION_CODE_MODE": ("1", "1"),
+    "DESK_TRACE": ("0", "1"),
+    "DESK_LLM_DEBUG": ("0", "1"),
 }
+
+
+def clean_env_value(raw: str) -> str:
+    """Strip inline comments (e.g. `1 # default`) so wrangler vars stay exact."""
+    return re.sub(r"\s+#.*$", "", raw.strip()).strip()
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -79,7 +89,7 @@ def parse_env(path: Path) -> dict[str, str]:
         if not s or s.startswith("#") or "=" not in s:
             continue
         k, v = s.split("=", 1)
-        out[k.strip()] = v.strip()
+        out[k.strip()] = clean_env_value(v)
     return out
 
 

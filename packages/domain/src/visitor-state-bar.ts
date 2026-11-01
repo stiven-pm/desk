@@ -22,14 +22,6 @@ export type VisitorStateBarInput = {
   extraChoices?: VisitorStateBarChoice[];
 };
 
-function canShowHumanShortcut(phase: ConversationPhase): boolean {
-  return (
-    phase === "automated" ||
-    phase === "handoff_triage" ||
-    phase === "needs_human"
-  );
-}
-
 /**
  * Barra de acciones que el runtime adjunta según estado (no depende del LLM).
  * Los `message` son comandos `__desk:*` firmados al enviar.
@@ -61,13 +53,6 @@ export function buildVisitorStateBarChoices(
   if (input.cartLineCount > 0) {
     push(deskCommandDisplayLabel({ kind: "cart" }), DESK_CMD_CART);
     push(deskCommandDisplayLabel({ kind: "pay" }), DESK_CMD_PAY);
-  }
-
-  if (canShowHumanShortcut(input.phase)) {
-    push(
-      deskCommandDisplayLabel({ kind: "human" }),
-      DESK_CMD_HUMAN,
-    );
   }
 
   return items;

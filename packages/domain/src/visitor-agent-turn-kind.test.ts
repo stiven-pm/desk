@@ -43,16 +43,30 @@ describe("inferAgentVisitorTurnKind", () => {
       }),
     ).toBe("browse_catalog");
   });
+
+  it("integración usada no fuerza turnKind service", () => {
+    expect(
+      inferAgentVisitorTurnKind({
+        visitorIntent: "general",
+        pendingPrompt: false,
+        hasProductCatalog: false,
+        commerceSearchUsed: false,
+        commerceCartMutated: false,
+        agentRescueFailure: false,
+        integrationToolsUsed: true,
+      }),
+    ).toBe("faq");
+  });
 });
 
 describe("effectiveVisitorTurnKind", () => {
-  it("escala a agent_struggling tras umbral", () => {
+  it("needs_human no añade botones de handoff", () => {
     expect(
       effectiveVisitorTurnKind({
-        turnKind: "faq",
-        struggleCount: 2,
-        phase: "automated",
+        turnKind: "handoff",
+        struggleCount: 5,
+        phase: "needs_human",
       }),
-    ).toBe("agent_struggling");
+    ).toBe("faq");
   });
 });

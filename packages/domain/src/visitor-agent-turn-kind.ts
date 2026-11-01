@@ -15,7 +15,11 @@ export type InferAgentVisitorTurnKindInput = {
   hasProductCatalog: boolean;
   commerceSearchUsed: boolean;
   commerceCartMutated: boolean;
+  commerceCartView?: boolean;
+  commerceCheckoutStep?: boolean;
   agentRescueFailure: boolean;
+  /** HTTP/MCP/integración/meta-tool ejecutada en el turno (SAC, pedidos, ERP). */
+  integrationToolsUsed?: boolean;
 };
 
 export function inferAgentVisitorTurnKind(
@@ -23,6 +27,8 @@ export function inferAgentVisitorTurnKind(
 ): VisitorTurnKind {
   if (input.agentRescueFailure) return "agent_struggling";
   if (input.pendingPrompt) return "pending_offer";
+  if (input.commerceCheckoutStep) return "checkout";
+  if (input.commerceCartView) return "cart_view";
   if (input.hasProductCatalog || input.commerceSearchUsed) {
     return "browse_catalog";
   }
@@ -36,14 +42,15 @@ export function effectiveVisitorTurnKind(args: {
   struggleCount: number;
   phase: ConversationPhase;
 }): VisitorTurnKind {
-  if (args.phase === "handoff_triage") return "handoff";
   if (
-    args.struggleCount >= VISITOR_STRUGGLE_COUNT_THRESHOLD &&
-    args.turnKind !== "pending_offer" &&
-    args.turnKind !== "handoff" &&
-    args.turnKind !== "checkout"
+    args.phase === "needs_human" ||
+    args.phase === "human_active" ||
+    args.phase === "handoff_triage"
   ) {
-    return "agent_struggling";
+    if (args.turnKind === "pending_offer" || args.turnKind === "checkout") {
+      return args.turnKind;
+    }
+    return "faq";
   }
   return args.turnKind;
 }

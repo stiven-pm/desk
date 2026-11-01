@@ -6,6 +6,10 @@ import {
   type PaymentWebhookProvider,
 } from "@chatbot/domain";
 import type { Env } from "../types";
+import {
+  publicRefSqlBindings,
+  publicRefWhereClause,
+} from "@chatbot/runtime/commerce/public-ref-db-lookup";
 import { providerSecretsFromManifest } from "./commerce-webhook-token";
 import { notifyCustomerPaymentResultInConversation } from "./commerce-payment-customer-notify";
 import { clearStockReservationsForConversation } from "@chatbot/runtime/commerce/stock-reservations";
@@ -64,18 +68,32 @@ export async function applyCommercePaymentWebhook(
 
   if (parsed.status === "failed") {
     const ref = parsed.orderReference;
-    const order = await env.DB.prepare(
-      `SELECT id, status, lines_json, conversation_id FROM sales_orders
+    const refBinds = publicRefSqlBindings(ref);
+    const order = refBinds
+      ? await env.DB.prepare(
+          `SELECT id, status, lines_json, conversation_id FROM sales_orders
+       WHERE org_id = ? AND (${publicRefWhereClause("public_ref")} OR id = ? OR summary LIKE ?)
+       ORDER BY created_at DESC LIMIT 1`,
+        )
+          .bind(orgId, ...refBinds, ref, `%${ref}%`)
+          .first<{
+            id: string;
+            status: string;
+            lines_json: string;
+            conversation_id: string;
+          }>()
+      : await env.DB.prepare(
+          `SELECT id, status, lines_json, conversation_id FROM sales_orders
        WHERE org_id = ? AND (public_ref = ? OR id = ? OR summary LIKE ?)
        ORDER BY created_at DESC LIMIT 1`,
-    )
-      .bind(orgId, ref, ref, `%${ref}%`)
-      .first<{
-        id: string;
-        status: string;
-        lines_json: string;
-        conversation_id: string;
-      }>();
+        )
+          .bind(orgId, ref, ref, `%${ref}%`)
+          .first<{
+            id: string;
+            status: string;
+            lines_json: string;
+            conversation_id: string;
+          }>();
     if (!order || order.status !== "awaiting_payment") {
       return { ok: true, code: "order_not_payable", orderId: order?.id };
     }
@@ -114,18 +132,32 @@ export async function applyCommercePaymentWebhook(
   if (existing) return { ok: true, code: "duplicate" };
 
   const ref = parsed.orderReference;
-  const order = await env.DB.prepare(
-    `SELECT id, status, lines_json, conversation_id FROM sales_orders
+  const refBinds = publicRefSqlBindings(ref);
+  const order = refBinds
+    ? await env.DB.prepare(
+        `SELECT id, status, lines_json, conversation_id FROM sales_orders
+     WHERE org_id = ? AND (${publicRefWhereClause("public_ref")} OR id = ? OR summary LIKE ?)
+     ORDER BY created_at DESC LIMIT 1`,
+      )
+        .bind(orgId, ...refBinds, ref, `%${ref}%`)
+        .first<{
+          id: string;
+          status: string;
+          lines_json: string;
+          conversation_id: string;
+        }>()
+    : await env.DB.prepare(
+        `SELECT id, status, lines_json, conversation_id FROM sales_orders
      WHERE org_id = ? AND (public_ref = ? OR id = ? OR summary LIKE ?)
      ORDER BY created_at DESC LIMIT 1`,
-  )
-    .bind(orgId, ref, ref, `%${ref}%`)
-    .first<{
-      id: string;
-      status: string;
-      lines_json: string;
-      conversation_id: string;
-    }>();
+      )
+        .bind(orgId, ref, ref, `%${ref}%`)
+        .first<{
+          id: string;
+          status: string;
+          lines_json: string;
+          conversation_id: string;
+        }>();
 
   if (!order) return { ok: false, code: "order_not_found" };
   if (!["awaiting_payment", "pending_verification"].includes(order.status)) {

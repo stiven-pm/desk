@@ -77,10 +77,15 @@ export interface Env {
   TURNSTILE_SITE_KEY?: string;
   /** URL opcional de consola shell Enterprise (Moltworker / Computer). */
   ENTERPRISE_SHELL_BASE_URL?: string;
-  HARNESS_LAZY_TOOLS?: string;
   HARNESS_SETUP_VERIFY?: string;
   HARNESS_COMPACT_HISTORY?: string;
-  HARNESS_ROUTER?: string;
+  AGENT_FLOW_TOOLS?: string;
+  AGENT_DRIVEN_WIZARD?: string;
+  INTEGRATION_CODE_MODE?: string;
+  LOADER?: import("@chatbot/runtime").WorkerLoaderBinding;
+  DESK_CODEMODE?: {
+    get(options: { props: { botId: string } }): import("@chatbot/runtime").DeskCodemodeRpc;
+  };
 }
 
 export interface ApiKeyAuth {

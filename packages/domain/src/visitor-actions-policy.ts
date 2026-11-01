@@ -1,4 +1,5 @@
 import type { ConversationPhase } from "./conversation-state";
+import { type CheckoutFlow, isPayRetryBlocker } from "./checkout-flow";
 import {
   DESK_CMD_CART,
   DESK_CMD_CONSENT,
@@ -18,6 +19,7 @@ import type { VisitorStateBarChoice } from "./visitor-state-bar";
 export type VisitorTurnKind =
   | "greeting"
   | "faq"
+  | "service"
   | "browse_catalog"
   | "product_detail"
   | "pick_qty"
@@ -30,7 +32,8 @@ export type VisitorTurnKind =
   | "pending_offer"
   | "checkout"
   | "agent_struggling"
-  | "handoff";
+  | "handoff"
+  | "offer_human";
 
 export const MAX_VISITOR_ACTION_BUTTONS = 4;
 
@@ -43,6 +46,7 @@ export type ResolveVisitorActionsInput = {
   extraChoices?: VisitorStateBarChoice[];
   /** productId para product_detail */
   productId?: string;
+  checkoutFlow?: CheckoutFlow;
 };
 
 const PRIORITY_ORDER: string[] = [
@@ -96,7 +100,6 @@ export function resolveVisitorActions(
 
   switch (turnKind) {
     case "greeting":
-    case "faq":
       if (hasPublishedCatalog) {
         pushChoice(
           items,
@@ -113,6 +116,28 @@ export function resolveVisitorActions(
           DESK_CMD_CART,
         );
       }
+      break;
+    case "faq":
+      if (cartLineCount > 0) {
+        pushChoice(
+          items,
+          seen,
+          deskCommandDisplayLabel({ kind: "cart" }),
+          DESK_CMD_CART,
+        );
+      }
+      break;
+    case "service":
+      if (cartLineCount > 0) {
+        pushChoice(
+          items,
+          seen,
+          deskCommandDisplayLabel({ kind: "cart" }),
+          DESK_CMD_CART,
+        );
+      }
+      break;
+    case "offer_human":
       break;
     case "browse_catalog":
       break;
@@ -209,35 +234,48 @@ export function resolveVisitorActions(
       pushChoice(items, seen, "Sí", DESK_CMD_OFFER_ACCEPT);
       pushChoice(items, seen, "No", DESK_CMD_OFFER_DECLINE);
       break;
-    case "checkout":
-      break;
-    case "agent_struggling":
-      if (hasPublishedCatalog) {
+    case "checkout": {
+      const f = input.checkoutFlow;
+      if (!f || f.phase !== "blocked") break;
+      const retry = isPayRetryBlocker(f.lastBlocker);
+      if (retry) {
+        pushChoice(items, seen, "Reintentar pago", DESK_CMD_PAY);
+      }
+      if (cartLineCount > 0) {
         pushChoice(
           items,
           seen,
-          deskCommandDisplayLabel({ kind: "menu" }),
-          DESK_CMD_MENU,
+          deskCommandDisplayLabel({ kind: "cart" }),
+          DESK_CMD_CART,
         );
       }
-      pushChoice(
-        items,
-        seen,
-        deskCommandDisplayLabel({ kind: "human" }),
-        DESK_CMD_HUMAN,
-      );
+      if (f.attempts >= 2) {
+        pushChoice(
+          items,
+          seen,
+          deskCommandDisplayLabel({ kind: "human" }),
+          DESK_CMD_HUMAN,
+        );
+      }
+      break;
+    }
+    case "agent_struggling":
       break;
     case "handoff":
-      pushChoice(
-        items,
-        seen,
-        deskCommandDisplayLabel({ kind: "human" }),
-        DESK_CMD_HUMAN,
-      );
       break;
   }
 
   return capActions(items);
+}
+
+export function turnKindAllowsActions(
+  turnKind: VisitorTurnKind,
+  checkoutFlow?: CheckoutFlow,
+): boolean {
+  if (turnKind === "checkout" && checkoutFlow?.phase === "blocked") {
+    return true;
+  }
+  return !VISITOR_TURN_KINDS_WITHOUT_ACTIONS.has(turnKind);
 }
 
 /** turnKinds que no deben llevar botones de acción en el harness. */
@@ -246,7 +284,6 @@ export const VISITOR_TURN_KINDS_WITHOUT_ACTIONS: ReadonlySet<VisitorTurnKind> =
     "pick_qty",
     "line_notes",
     "buyer_field",
-    "fulfillment_mode",
     "browse_catalog",
     "checkout",
   ]);

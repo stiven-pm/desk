@@ -1,7 +1,6 @@
 import type { DeskCommand } from "./desk-action";
 import { deskCommandDisplayLabel, deskCommandToInternal } from "./desk-action";
 import { NATIVE_COMMERCE_LEAD } from "./commerce-native-messages";
-import { buildCommerceOfferActionPromptSection } from "./pending-prompt";
 
 /** Tipos de bloque desk-ui (alineados con @chatbot/chat-ui). */
 export const DESK_UI_BLOCK_TYPE = {
@@ -30,6 +29,16 @@ export const COMMERCE_TOOL = {
   getOrder: "commerce_get_order",
   getPaymentStatus: "commerce_get_payment_status",
   offerAction: "commerce_offer_action",
+  viewCart: "commerce_view_cart",
+  provideBuyerFields: "commerce_provide_buyer_fields",
+  setFulfillment: "commerce_set_fulfillment",
+  beginPayment: "commerce_begin_payment",
+} as const;
+
+/** Herramientas del harness agente (no commerce nativo). */
+export const DESK_AGENT_TOOL = {
+  visitorMessage: "desk_visitor_message",
+  escalateHuman: "desk_escalate_to_human",
 } as const;
 
 export type CommerceTurnHandler = "native" | "agent";
@@ -167,55 +176,4 @@ export function assistantTextIncludesDeskBlock(
     text.includes(`"type":"${blockType}"`) ||
     text.includes(`"type": "${blockType}"`)
   );
-}
-
-/** Canal nativo vs agente — para system prompt. */
-export function buildCommerceChannelContractSection(): string {
-  const rows = nativeSpecs
-    .map(
-      (s) =>
-        `| ${s.visitorLabel} | \`${s.internalMessage.replace("…", "{id}")}\` | ${s.runtimeOutcome} | ${s.deskUiBlocks.map((b) => `\`${b}\``).join(", ") || "—"} | ${s.agentAfterNative} |`,
-    )
-    .join("\n");
-
-  return `
-## Canal de venta (dos capas — no mezclar)
-
-1. **Nativo (botones/modal):** si el mensaje del visitante es un comando desk interno (\`__desk:…__\` o token firmado \`desk.act.v1.\`), el runtime responde **antes** del LLM con texto + desk-ui fijos. Tú **no** re-ejecutas esa acción en el mismo turno.
-2. **Agente (prosa):** texto libre → tú eliges herramientas \`commerce_*\` según el grafo; el runtime puede adjuntar \`${DESK_UI_BLOCK_TYPE.productCatalog}\` tras \`${COMMERCE_TOOL.searchProducts}\`.
-
-| Botón / acción | Mensaje interno (choices) | Efecto runtime | Bloques UI | Tras acción nativa (tu turno) |
-|----------------|---------------------------|----------------|------------|-------------------------------|
-${rows}
-
-**Menú** = abrir catálogo publicado (modal \`${DESK_UI_BLOCK_TYPE.productCatalog}\`), no un menú de texto inventado. **Pagar** = flujo checkout nativo, no un link inventado.
-
-Para choices que generes tú: \`message\` debe ser el comando interno de la fila (el runtime lo firma al enviar). Etiquetas visibles: columna «Botón / acción».
-`.trim();
-}
-
-/** Grafo agente — herramientas por situación (sin sinónimos NL en runtime). */
-export function buildCommerceAgentGraphSection(): string {
-  const t = COMMERCE_TOOL;
-  return `
-## Grafo de venta (prosa del visitante → herramientas)
-
-**Estado cada turno:** «Carrito y sesión», «Catálogo publicado», historial, fase.
-
-| Situación | Herramientas | UI (desk-ui) |
-|-----------|--------------|--------------|
-| Saludo / charla | ninguna salvo que pida ver oferta | choices opcional |
-| Explorar oferta | \`${t.searchProducts}\` con \`mode: "browse"\` o \`"search"\` + query corto de producto | runtime adjunta \`${DESK_UI_BLOCK_TYPE.productCatalog}\` |
-| Oferta sí/no (menú, carrito, pago) | \`${t.offerAction}\` antes de preguntar | \`pending_prompt\` + botones firmados |
-| Producto concreto | \`${t.getProductDetails}\` | \`${DESK_UI_BLOCK_TYPE.offers}\` o choices |
-| Añadir / editar carrito | \`${t.cartAdd}\`, \`${t.cartUpdate}\`, \`${t.cartGet}\` | \`${DESK_UI_BLOCK_TYPE.cart}\` si ayuda |
-| Datos comprador | \`${t.setBuyer}\` | prosa + una pregunta por campo |
-| Pagar (prosa) | \`${t.startCheckout}\` | link del servidor, no inventado |
-| Postventa | \`${t.getOrder}\`, \`${t.getPaymentStatus}\` | prosa |
-| FAQ / políticas | contexto documental | sin commerce salvo que compren |
-
-**Prohibido:** productId/priceCents/stock inventados; listar catálogo entero en prosa; prometer carrito/checkout sin tool; duplicar lo que un botón nativo ya hizo en el mensaje anterior.
-
-${buildCommerceOfferActionPromptSection()}
-`.trim();
 }

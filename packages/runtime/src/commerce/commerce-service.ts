@@ -2,14 +2,30 @@ import {
   buyerFieldsForType,
   missingCommerceBuyerFields,
   parseCommerceManifest,
+  HUMAN_VERIFIED_META_KEY,
+  humanVerificationStillValid,
+  CHECKOUT_FLOW_META_KEY,
+  parseCheckoutFlow,
+  type CheckoutFlow,
   type CommerceBuyer,
   type CommerceBuyerType,
   type CommerceCart,
   type CommerceCartLine,
   type OrderFulfillment,
   type OrderFulfillmentMode,
+  resolvePublicOrderRefForLookup,
 } from "@chatbot/domain";
 import type { CatalogPriceEntry } from "./catalog-price";
+import {
+  findOrderInRecentByBuyer,
+  mergeNativeOrderLookup,
+  type NativeOrderLookupInput,
+  finalizeNativeOrderLookupInput,
+} from "./native-order-lookup";
+import {
+  publicRefSqlBindings,
+  publicRefWhereClause,
+} from "./public-ref-db-lookup";
 import { formatPublicOrderRef, formatPublicAccessToken } from "./order-ref";
 import {
   getPublishedProduct,
@@ -29,6 +45,11 @@ import {
 } from "./stock-reservations";
 import { maxAddQuantityForRow } from "./visitor-quantity";
 import { verifyTurnstileToken } from "./turnstile";
+import {
+  advanceCheckout,
+  flowFromAdvance,
+  type AdvanceResult,
+} from "./checkout-advance";
 import {
   addLine,
   cartSubtotalCents,
@@ -224,6 +245,24 @@ export class CommerceService {
 
   clearCheckoutFulfillment(): void {
     this.deps.meta.set(META_CHECKOUT_FULFILLMENT, "");
+  }
+
+  getCheckoutFlow(): CheckoutFlow {
+    return parseCheckoutFlow(this.deps.meta.get(CHECKOUT_FLOW_META_KEY));
+  }
+
+  setCheckoutFlow(flow: CheckoutFlow): void {
+    this.deps.meta.set(CHECKOUT_FLOW_META_KEY, JSON.stringify(flow));
+  }
+
+  async advanceCheckoutFlow(
+    opts?: Parameters<typeof advanceCheckout>[1],
+  ): Promise<{ advance: AdvanceResult; flow: CheckoutFlow }> {
+    const prev = this.getCheckoutFlow();
+    const advance = await advanceCheckout(this, opts);
+    const flow = flowFromAdvance(prev, advance);
+    this.setCheckoutFlow(flow);
+    return { advance, flow };
   }
 
   fulfillmentFromBuyer(
@@ -1010,13 +1049,27 @@ export class CommerceService {
       }
     }
 
-    const turnstile = await verifyTurnstileToken(
-      this.deps.turnstileSecret,
-      opts?.turnstileToken,
-      {
-        requireConfigured: this.deps.checkoutEnv === "production",
-      },
-    );
+    const skipTurnstileForSession =
+      !opts?.turnstileToken?.trim() &&
+      humanVerificationStillValid(
+        this.deps.meta.get(HUMAN_VERIFIED_META_KEY),
+      );
+
+    let turnstile: Awaited<ReturnType<typeof verifyTurnstileToken>>;
+    if (skipTurnstileForSession) {
+      turnstile = { ok: true };
+    } else {
+      turnstile = await verifyTurnstileToken(
+        this.deps.turnstileSecret,
+        opts?.turnstileToken,
+        {
+          requireConfigured: this.deps.checkoutEnv === "production",
+        },
+      );
+      if (turnstile.ok && opts?.turnstileToken?.trim()) {
+        this.deps.meta.set(HUMAN_VERIFIED_META_KEY, new Date().toISOString());
+      }
+    }
     if (!turnstile.ok) {
       return { ok: false, code: turnstile.code };
     }
@@ -1124,21 +1177,78 @@ export class CommerceService {
     return row?.currency ?? null;
   }
 
-  async getOrder(orderId?: string): Promise<Record<string, unknown> | null> {
+  async getOrder(
+    orderId?: string,
+    opts?: {
+      phone?: string;
+      documentId?: string;
+      customerName?: string;
+      email?: string;
+      taxId?: string;
+      orderHint?: string;
+    },
+  ): Promise<Record<string, unknown> | null> {
+    return this.lookupOrder(mergeNativeOrderLookup(orderId, opts));
+  }
+
+  async lookupOrder(
+    input: NativeOrderLookupInput,
+  ): Promise<Record<string, unknown> | null> {
     if (!this.deps.db) return null;
-    const id =
-      orderId?.trim() ||
-      this.deps.meta.get(META_LAST_ORDER) ||
-      "";
-    if (!id) return null;
-    const row = await this.deps.db
-      .prepare(
-        `SELECT id, status, currency, subtotal_cents, summary, buyer_json, lines_json, created_at, public_ref
-         FROM sales_orders WHERE id = ? AND org_id = ?`,
-      )
-      .bind(id, this.deps.orgId)
-      .first<Record<string, unknown>>();
-    return row ?? null;
+
+    const q = finalizeNativeOrderLookupInput(input);
+
+    const ORDER_SELECT = `SELECT id, status, currency, subtotal_cents, summary, buyer_json, lines_json, created_at, public_ref
+         FROM sales_orders WHERE org_id = ?`;
+
+    if (q.publicRef) {
+      const binds = publicRefSqlBindings(q.publicRef);
+      if (binds) {
+        const byRef = await this.deps.db
+          .prepare(
+            `${ORDER_SELECT} AND ${publicRefWhereClause("public_ref")} ORDER BY created_at DESC LIMIT 1`,
+          )
+          .bind(this.deps.orgId, ...binds)
+          .first<Record<string, unknown>>();
+        if (byRef) return byRef;
+      }
+    }
+
+    if (q.orderUuid) {
+      const byId = await this.deps.db
+        .prepare(`${ORDER_SELECT} AND id = ?`)
+        .bind(this.deps.orgId, q.orderUuid)
+        .first<Record<string, unknown>>();
+      if (byId) return byId;
+    }
+
+    const needsScan =
+      Boolean(q.documentId) ||
+      Boolean(q.taxId) ||
+      Boolean(q.email) ||
+      Boolean(q.customerName) ||
+      Boolean(q.orderHint?.trim()) ||
+      Boolean(q.phone);
+
+    if (needsScan) {
+      const rows = await this.deps.db
+        .prepare(`${ORDER_SELECT} ORDER BY created_at DESC LIMIT 50`)
+        .bind(this.deps.orgId)
+        .all<Record<string, unknown>>();
+      const list = rows.results ?? [];
+      const match = findOrderInRecentByBuyer(list, q);
+      if (match) return match;
+    }
+
+    const last = this.deps.meta.get(META_LAST_ORDER)?.trim();
+    if (last && !needsScan && !q.publicRef && !q.orderUuid) {
+      return this.deps.db
+        .prepare(`${ORDER_SELECT} AND id = ?`)
+        .bind(this.deps.orgId, last)
+        .first<Record<string, unknown>>();
+    }
+
+    return null;
   }
 
   async getPaymentStatus(reference: string): Promise<Record<string, unknown>> {
@@ -1162,10 +1272,12 @@ export class CommerceService {
       { instanceId: creds.instanceId },
     );
     if (!bundle) return { ok: false, code: "integration_not_active" };
+    const resolved = resolvePublicOrderRefForLookup(reference);
+    const refForProvider = resolved?.canonical ?? reference.trim();
     const result = await executeIntegrationCapability(
       bundle,
       "payment.verify",
-      { reference },
+      { reference: refForProvider },
     );
     if (!result.ok) return { ok: false, code: result.code };
     return { ok: true, ...result.mapped };

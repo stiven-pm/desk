@@ -4,6 +4,12 @@
  */
 
 import { CHAT_DEFAULT_MAX_TOKENS } from "@chatbot/domain";
+import {
+  deskTraceClip,
+  deskTraceLlmVerbose,
+  deskTraceMessagesSummary,
+  deskTraceToolNames,
+} from "./desk-trace";
 
 export const DEFAULT_LLM_TIMEOUT_MS = 45_000;
 
@@ -12,6 +18,12 @@ export const DEFAULT_WORKERS_AI_CHAT_MODEL =
 export const DEFAULT_WORKERS_AI_EMBEDDING_MODEL = "@cf/baai/bge-m3";
 /** Dimensión densa de BGE-M3 en Workers AI */
 export const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
+
+export type LlmAttemptLogContext = {
+  botId?: string;
+  conversationId?: string;
+  ladderStep?: number;
+};
 
 export type LlmEnv = {
   AI?: Ai;
@@ -22,7 +34,17 @@ export type LlmEnv = {
   LLM_REQUEST_TIMEOUT_MS?: string;
   LLM_STREAM_ENABLED?: string;
   EMBEDDING_DIMENSIONS?: string;
+  /** "1" logs truncated request/response on empty AI responses (test only). */
+  DESK_LLM_DEBUG?: string;
+  /** "1" logs full visitor/agent pipeline as desk_trace JSON lines. */
+  DESK_TRACE?: string;
 };
+
+export { CHAT_DEFAULT_MAX_TOKENS };
+
+function deskLlmDebugEnabled(env: LlmEnv): boolean {
+  return deskTraceLlmVerbose(env);
+}
 
 export function resolveLlmTimeoutMs(env: LlmEnv): number {
   const n = Number(env.LLM_REQUEST_TIMEOUT_MS);
@@ -91,7 +113,10 @@ function logWorkersAiError(model: string, err: unknown): void {
   );
 }
 
-function logWorkersAiEmptyResponse(model: string, out: unknown): void {
+function emptyResponseMeta(out: unknown): {
+  finish_reason: string | null;
+  reasoning_chars: number;
+} {
   const o = out as {
     choices?: Array<{
       finish_reason?: string;
@@ -99,29 +124,161 @@ function logWorkersAiEmptyResponse(model: string, out: unknown): void {
     }>;
   };
   const choice = o.choices?.[0];
+  return {
+    finish_reason: choice?.finish_reason ?? null,
+    reasoning_chars: choice?.message?.reasoning_content?.length ?? 0,
+  };
+}
+
+function logWorkersAiEmptyResponse(
+  env: LlmEnv,
+  model: string,
+  out: unknown,
+  body: Record<string, unknown>,
+  ctx?: LlmAttemptLogContext,
+): void {
+  const meta = emptyResponseMeta(out);
   console.error(
     JSON.stringify({
       tag: "desk_llm_empty_response",
       model,
-      finish_reason: choice?.finish_reason ?? null,
-      reasoning_chars: choice?.message?.reasoning_content?.length ?? 0,
+      finish_reason: meta.finish_reason,
+      reasoning_chars: meta.reasoning_chars,
+      botId: ctx?.botId,
+      conversationId: ctx?.conversationId,
+      ladderStep: ctx?.ladderStep,
       at: new Date().toISOString(),
     }),
   );
+  if (deskLlmDebugEnabled(env)) {
+    const msgs = (body.messages as Array<{ role?: string; content?: string }>) ?? [];
+    console.error(
+      JSON.stringify({
+        tag: "desk_llm_debug",
+        model,
+        toolNames: ((body.tools as Array<{ function?: { name?: string } }>) ?? []).map(
+          (t) => t.function?.name,
+        ),
+        roles: msgs.map((m) => m.role),
+        systemChars: String(msgs[0]?.content ?? "").length,
+        maxTokens: body.max_tokens,
+        rawOut: JSON.stringify(out).slice(0, 4000),
+        requestBody: JSON.stringify(body).slice(0, 60_000),
+      }),
+    );
+  }
 }
+
+function logLlmAttempt(
+  env: LlmEnv,
+  ctx: LlmAttemptLogContext | undefined,
+  model: string,
+  meta: {
+    durationMs: number;
+    toolCount: number;
+    ok: boolean;
+    reason?: "not_configured" | "http_error" | "timeout" | "empty_response";
+    finishReason?: string | null;
+    reasoningChars?: number;
+    contentLength?: number;
+    toolCallNames?: string[];
+    messages?: LlmChatMessage[];
+    llmToolNames?: string[];
+    contentPreview?: string;
+  },
+): void {
+  console.error(
+    JSON.stringify({
+      tag: "desk_agent_llm_attempt",
+      model,
+      botId: ctx?.botId,
+      conversationId: ctx?.conversationId,
+      ladderStep: ctx?.ladderStep ?? null,
+      durationMs: meta.durationMs,
+      toolCount: meta.toolCount,
+      ok: meta.ok,
+      reason: meta.ok ? null : meta.reason,
+      finishReason: meta.finishReason ?? null,
+      reasoningChars: meta.reasoningChars ?? 0,
+      contentLength: meta.contentLength ?? 0,
+      toolCallNames: meta.toolCallNames ?? [],
+      at: new Date().toISOString(),
+      ...(deskTraceLlmVerbose(env)
+        ? {
+            llmToolNames: meta.llmToolNames ?? [],
+            messageSummary: deskTraceMessagesSummary(meta.messages ?? []),
+            contentPreview: meta.contentPreview ?? "",
+          }
+        : {}),
+    }),
+  );
+}
+
+export type LlmChatMessageToolCall = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
 
 export type LlmChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   tool_call_id?: string;
   name?: string;
+  tool_calls?: LlmChatMessageToolCall[];
 };
+
+function mapMessageForWorkersAi(m: LlmChatMessage): Record<string, unknown> {
+  if (m.role === "tool") {
+    return {
+      role: "tool" as const,
+      content: m.content,
+      tool_call_id: m.tool_call_id,
+      name: m.name,
+    };
+  }
+  if (m.role === "assistant" && m.tool_calls?.length) {
+    return {
+      role: "assistant" as const,
+      content: m.content ?? "",
+      tool_calls: m.tool_calls.map((tc) => ({
+        id: tc.id,
+        type: "function" as const,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      })),
+    };
+  }
+  return { role: m.role, content: m.content };
+}
 
 export type LlmToolCall = {
   id: string;
   name: string;
   arguments: string;
 };
+
+function llmTraceAttemptFields(
+  env: LlmEnv,
+  params: {
+    messages: LlmChatMessage[];
+    tools?: Array<{ function?: { name?: string } }>;
+  },
+  content?: string,
+): {
+  messages?: LlmChatMessage[];
+  llmToolNames?: string[];
+  contentPreview?: string;
+} {
+  if (!deskTraceLlmVerbose(env)) return {};
+  return {
+    messages: params.messages,
+    llmToolNames: deskTraceToolNames(params.tools),
+    contentPreview: content ? deskTraceClip(content, 400) : "",
+  };
+}
 
 type ChatOk = {
   ok: true;
@@ -169,7 +326,152 @@ export function extractWorkersAiChatText(out: unknown): string {
   return "";
 }
 
-function parseToolCallsFromContent(content: string): LlmToolCall[] | undefined {
+type WorkersAiRawToolCall = {
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: string };
+  name?: string;
+  arguments?: string;
+};
+
+function mapWorkersAiRawToolCalls(
+  raw: WorkersAiRawToolCall[] | undefined,
+): LlmToolCall[] | undefined {
+  if (!raw?.length) return undefined;
+  return raw.map((tc, i) => ({
+    id: tc.id ?? `call_${i}`,
+    name: tc.function?.name ?? tc.name ?? "unknown",
+    arguments: tc.function?.arguments ?? tc.arguments ?? "{}",
+  }));
+}
+
+/** OpenAI-style `choices[].message.tool_calls` and legacy top-level `tool_calls`. */
+export function extractWorkersAiToolCalls(
+  out: unknown,
+  allowedToolNames?: Set<string>,
+): LlmToolCall[] | undefined {
+  if (!out || typeof out !== "object") return undefined;
+  const o = out as Record<string, unknown>;
+
+  let mapped =
+    mapWorkersAiRawToolCalls(o.tool_calls as WorkersAiRawToolCall[] | undefined) ??
+    mapWorkersAiRawToolCalls(
+      (
+        o.choices as
+          | Array<{ message?: { tool_calls?: WorkersAiRawToolCall[] } }>
+          | undefined
+      )?.[0]?.message?.tool_calls,
+    );
+
+  if (!mapped?.length && o.result && typeof o.result === "object") {
+    mapped = extractWorkersAiToolCalls(o.result, allowedToolNames);
+  }
+
+  return filterToolCallsByAllowlist(mapped ?? [], allowedToolNames);
+}
+
+function readBalancedJsonObject(source: string, openBraceIndex: number): string | null {
+  if (source[openBraceIndex] !== "{") return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = openBraceIndex; i < source.length; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return source.slice(openBraceIndex, i + 1);
+    }
+  }
+  return null;
+}
+
+function parseInlineFunctionToolCalls(
+  content: string,
+  allowedToolNames?: Set<string>,
+): LlmToolCall[] | undefined {
+  if (!content.trim() || !allowedToolNames?.size) return undefined;
+  const calls: LlmToolCall[] = [];
+  for (const name of allowedToolNames) {
+    const needle = `${name}(`;
+    let idx = 0;
+    while (idx < content.length) {
+      const at = content.indexOf(needle, idx);
+      if (at < 0) break;
+      const braceAt = content.indexOf("{", at + needle.length);
+      if (braceAt < 0) {
+        idx = at + needle.length;
+        continue;
+      }
+      const argsJson = readBalancedJsonObject(content, braceAt);
+      if (argsJson) {
+        try {
+          JSON.parse(argsJson);
+          calls.push({
+            id: crypto.randomUUID(),
+            name,
+            arguments: argsJson,
+          });
+          idx = braceAt + argsJson.length;
+          continue;
+        } catch {
+          /* invalid JSON */
+        }
+      }
+      idx = at + needle.length;
+    }
+  }
+  return calls.length ? calls : undefined;
+}
+
+function logToolParsedFromText(
+  ctx: LlmAttemptLogContext | undefined,
+  model: string,
+  toolNames: string[],
+): void {
+  if (!toolNames.length) return;
+  console.error(
+    JSON.stringify({
+      tag: "desk_tool_parsed_from_text",
+      model,
+      botId: ctx?.botId,
+      conversationId: ctx?.conversationId,
+      ladderStep: ctx?.ladderStep ?? null,
+      toolNames,
+      at: new Date().toISOString(),
+    }),
+  );
+}
+
+function filterToolCallsByAllowlist(
+  calls: LlmToolCall[],
+  allowedToolNames: Set<string> | undefined,
+): LlmToolCall[] | undefined {
+  if (!calls.length) return undefined;
+  if (!allowedToolNames?.size) return calls;
+  const filtered = calls.filter((c) => allowedToolNames.has(c.name));
+  return filtered.length ? filtered : undefined;
+}
+
+/** Solo texto de salida del asistente (Workers AI); opcional allowlist del turno. */
+export function parseToolCallsFromContent(
+  content: string,
+  allowedToolNames?: Set<string>,
+): LlmToolCall[] | undefined {
+  const inline = parseInlineFunctionToolCalls(content, allowedToolNames);
+  if (inline?.length) {
+    return filterToolCallsByAllowlist(inline, allowedToolNames);
+  }
   const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/);
   let raw = fenced?.[1]?.trim() ?? content.trim();
   if (!raw.startsWith("{")) {
@@ -182,18 +484,35 @@ function parseToolCallsFromContent(content: string): LlmToolCall[] | undefined {
       tool?: string;
       name?: string;
       arguments?: Record<string, unknown>;
-      tool_calls?: LlmToolCall[];
+      tool_calls?: Array<{
+        id?: string;
+        name?: string;
+        function?: { name?: string; arguments?: string };
+        arguments?: string;
+      }>;
     };
-    if (j.tool_calls?.length) return j.tool_calls;
+    if (j.tool_calls?.length) {
+      const mapped: LlmToolCall[] = j.tool_calls.map((tc, i) => ({
+        id: tc.id ?? `parsed_${i}`,
+        name: tc.function?.name ?? tc.name ?? "unknown",
+        arguments:
+          tc.function?.arguments ??
+          (typeof tc.arguments === "string"
+            ? tc.arguments
+            : JSON.stringify(tc.arguments ?? {})),
+      }));
+      return filterToolCallsByAllowlist(mapped, allowedToolNames);
+    }
     const name = j.tool ?? j.name;
     if (name) {
-      return [
+      const single: LlmToolCall[] = [
         {
           id: crypto.randomUUID(),
           name,
           arguments: JSON.stringify(j.arguments ?? {}),
         },
       ];
+      return filterToolCallsByAllowlist(single, allowedToolNames);
     }
   } catch {
     return undefined;
@@ -226,6 +545,7 @@ export async function llmChatWithMessages(
       };
     }>;
     maxTokens?: number;
+    logContext?: LlmAttemptLogContext;
   },
 ): Promise<ChatOk | ChatErr> {
   const run = (): Promise<ChatOk | ChatErr> =>
@@ -251,22 +571,14 @@ async function llmChatWithMessagesOnce(
       };
     }>;
     maxTokens?: number;
+    logContext?: LlmAttemptLogContext;
   },
 ): Promise<ChatOk | ChatErr> {
   if (!workersAiConfigured(env)) return { ok: false, reason: "not_configured" };
 
   const model = resolveChatModel(env);
-  const aiMessages = params.messages.map((m) => {
-    if (m.role === "tool") {
-      return {
-        role: "tool" as const,
-        content: m.content,
-        tool_call_id: m.tool_call_id,
-        name: m.name,
-      };
-    }
-    return { role: m.role, content: m.content };
-  });
+  const started = Date.now();
+  const aiMessages = params.messages.map(mapMessageForWorkersAi);
 
   try {
     const body: Record<string, unknown> = {
@@ -284,34 +596,56 @@ async function llmChatWithMessagesOnce(
       aiOptions(env),
     );
 
-    const data = out as {
-      response?: string;
-      choices?: Array<{ message?: { content?: string }; text?: string }>;
-      tool_calls?: Array<{
-        id?: string;
-        function?: { name?: string; arguments?: string };
-        name?: string;
-        arguments?: string;
-      }>;
-      usage?: UsageTags;
-    };
+    const data = out as { usage?: UsageTags };
 
-    let toolCalls: LlmToolCall[] | undefined;
-    if (data.tool_calls?.length) {
-      toolCalls = data.tool_calls.map((tc, i) => ({
-        id: tc.id ?? `call_${i}`,
-        name: tc.function?.name ?? tc.name ?? "unknown",
-        arguments: tc.function?.arguments ?? tc.arguments ?? "{}",
-      }));
-    } else {
-      toolCalls = parseToolCallsFromContent(extractWorkersAiChatText(out));
+    const allowedToolNames = params.tools?.length
+      ? new Set(params.tools.map((t) => t.function.name))
+      : undefined;
+
+    let toolCalls = extractWorkersAiToolCalls(out, allowedToolNames);
+    if (!toolCalls?.length) {
+      const parsed = parseToolCallsFromContent(
+        extractWorkersAiChatText(out),
+        allowedToolNames,
+      );
+      if (parsed?.length) {
+        logToolParsedFromText(
+          params.logContext,
+          model,
+          parsed.map((t) => t.name),
+        );
+        toolCalls = parsed;
+      }
     }
 
     const content = extractWorkersAiChatText(out);
+    const durationMs = Date.now() - started;
+    const emptyMeta = emptyResponseMeta(out);
     if (!content && !toolCalls?.length) {
-      logWorkersAiEmptyResponse(model, out);
+      logWorkersAiEmptyResponse(env, model, out, body, params.logContext);
+      logLlmAttempt(env, params.logContext, model, {
+        durationMs,
+        toolCount: params.tools?.length ?? 0,
+        ok: false,
+        reason: "empty_response",
+        finishReason: emptyMeta.finish_reason,
+        reasoningChars: emptyMeta.reasoning_chars,
+        contentLength: 0,
+        toolCallNames: [],
+        ...llmTraceAttemptFields(env, params),
+      });
       return { ok: false, reason: "empty_response" };
     }
+    logLlmAttempt(env, params.logContext, model, {
+      durationMs,
+      toolCount: params.tools?.length ?? 0,
+      ok: true,
+      finishReason: emptyMeta.finish_reason,
+      reasoningChars: emptyMeta.reasoning_chars,
+      contentLength: content.length,
+      toolCallNames: toolCalls?.map((t) => t.name) ?? [],
+      ...llmTraceAttemptFields(env, params, content),
+    });
     return {
       ok: true,
       content,
@@ -320,10 +654,25 @@ async function llmChatWithMessagesOnce(
       toolCalls,
     };
   } catch (e) {
+    const durationMs = Date.now() - started;
     if (e instanceof Error && e.name === "TimeoutError") {
+      logLlmAttempt(env, params.logContext, model, {
+        durationMs,
+        toolCount: params.tools?.length ?? 0,
+        ok: false,
+        reason: "timeout",
+        ...llmTraceAttemptFields(env, params),
+      });
       return { ok: false, reason: "timeout" };
     }
     logWorkersAiError(model, e);
+    logLlmAttempt(env, params.logContext, model, {
+      durationMs,
+      toolCount: params.tools?.length ?? 0,
+      ok: false,
+      reason: "http_error",
+      ...llmTraceAttemptFields(env, params),
+    });
     return { ok: false, reason: "http_error" };
   }
 }
@@ -372,7 +721,13 @@ async function llmChatCompletionOnce(
     const data = out as { usage?: UsageTags };
     const content = extractWorkersAiChatText(out);
     if (!content) {
-      logWorkersAiEmptyResponse(model, out);
+      logWorkersAiEmptyResponse(env, model, out, {
+        messages: [
+          { role: "system", content: params.system },
+          { role: "user", content: params.user },
+        ],
+        max_tokens: params.maxTokens ?? CHAT_DEFAULT_MAX_TOKENS,
+      });
       return { ok: false, reason: "empty_response" };
     }
     return {
@@ -392,24 +747,20 @@ async function llmChatCompletionOnce(
 
 type WorkersAiStreamChunk = {
   response?: string;
-  choices?: Array<{ delta?: { content?: string }; text?: string }>;
-  tool_calls?: Array<{
-    id?: string;
-    function?: { name?: string; arguments?: string };
-    name?: string;
-    arguments?: string;
+  choices?: Array<{
+    delta?: { content?: string; tool_calls?: WorkersAiRawToolCall[] };
+    message?: { tool_calls?: WorkersAiRawToolCall[] };
+    text?: string;
   }>;
+  tool_calls?: WorkersAiRawToolCall[];
 };
 
-function mapWorkersAiToolCalls(
-  raw: WorkersAiStreamChunk["tool_calls"],
-): LlmToolCall[] | undefined {
-  if (!raw?.length) return undefined;
-  return raw.map((tc, i) => ({
-    id: tc.id ?? `call_${i}`,
-    name: tc.function?.name ?? tc.name ?? "unknown",
-    arguments: tc.function?.arguments ?? tc.arguments ?? "{}",
-  }));
+function toolCallsFromStreamChunk(j: WorkersAiStreamChunk): LlmToolCall[] | undefined {
+  return (
+    mapWorkersAiRawToolCalls(j.tool_calls) ??
+    mapWorkersAiRawToolCalls(j.choices?.[0]?.delta?.tool_calls) ??
+    mapWorkersAiRawToolCalls(j.choices?.[0]?.message?.tool_calls)
+  );
 }
 
 function extractWorkersAiStreamDelta(
@@ -450,7 +801,12 @@ type WorkersAiStreamResult = {
 
 async function readWorkersAiStream(
   stream: ReadableStream,
-  onDelta: (chunk: string) => void,
+  onDelta: (chunk: string) => void | Promise<void>,
+  opts?: {
+    allowedToolNames?: Set<string>;
+    model?: string;
+    logContext?: LlmAttemptLogContext;
+  },
 ): Promise<WorkersAiStreamResult> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -459,11 +815,11 @@ async function readWorkersAiStream(
   let toolCalls: LlmToolCall[] | undefined;
   const cumulativeResponse = { value: "" };
 
-  const emit = (raw: string) => {
+  const emit = async (raw: string) => {
     if (!raw || raw === "[DONE]") return;
     try {
       const j = JSON.parse(raw) as WorkersAiStreamChunk;
-      const fromChunk = mapWorkersAiToolCalls(j.tool_calls);
+      const fromChunk = toolCallsFromStreamChunk(j);
       if (fromChunk?.length) toolCalls = fromChunk;
     } catch {
       // not JSON — fall through to delta extraction
@@ -471,7 +827,7 @@ async function readWorkersAiStream(
     const piece = extractWorkersAiStreamDelta(raw, cumulativeResponse);
     if (!piece) return;
     full += piece;
-    onDelta(piece);
+    await onDelta(piece);
   };
 
   while (true) {
@@ -484,19 +840,31 @@ async function readWorkersAiStream(
       const line = part.trim();
       if (!line) continue;
       if (line.startsWith("data:")) {
-        emit(line.slice(5).trim());
+        await emit(line.slice(5).trim());
       } else {
-        emit(line);
+        await emit(line);
       }
     }
   }
 
   if (buffer.trim()) {
-    emit(buffer.trim());
+    await emit(buffer.trim());
   }
 
   const content = full.trim();
-  const parsedTools = parseToolCallsFromContent(content);
+  let parsedTools = parseToolCallsFromContent(
+    content,
+    opts?.allowedToolNames,
+  );
+  if (parsedTools?.length && !toolCalls?.length) {
+    logToolParsedFromText(
+      opts?.logContext,
+      opts?.model ?? "",
+      parsedTools.map((t) => t.name),
+    );
+  } else if (toolCalls?.length) {
+    parsedTools = undefined;
+  }
   return {
     content,
     toolCalls: toolCalls?.length ? toolCalls : parsedTools,
@@ -516,23 +884,13 @@ export async function llmChatWithMessagesStream(
       };
     }>;
     maxTokens?: number;
-    onDelta: (chunk: string) => void;
+    onDelta: (chunk: string) => void | Promise<void>;
   },
 ): Promise<ChatOk | ChatErr> {
   if (!workersAiConfigured(env)) return { ok: false, reason: "not_configured" };
 
   const model = resolveChatModel(env);
-  const aiMessages = params.messages.map((m) => {
-    if (m.role === "tool") {
-      return {
-        role: "tool" as const,
-        content: m.content,
-        tool_call_id: m.tool_call_id,
-        name: m.name,
-      };
-    }
-    return { role: m.role, content: m.content };
-  });
+  const aiMessages = params.messages.map(mapMessageForWorkersAi);
 
   try {
     const body: Record<string, unknown> = {
@@ -545,16 +903,28 @@ export async function llmChatWithMessagesStream(
       body.tool_choice = "auto";
     }
 
+    const allowedToolNames = params.tools?.length
+      ? new Set(params.tools.map((t) => t.function.name))
+      : undefined;
+
     const stream = (await env.AI!.run(
       model,
       workersAiChatRequestBody(model, body),
       aiOptions(env),
     )) as unknown as ReadableStream<Uint8Array>;
 
-    const parsed = await readWorkersAiStream(stream, params.onDelta);
+    const parsed = await readWorkersAiStream(stream, params.onDelta, {
+      allowedToolNames,
+      model,
+    });
     const finalText = parsed.content || "";
     if (!finalText && !parsed.toolCalls?.length) {
-      logWorkersAiEmptyResponse(model, { stream_empty: true });
+      logWorkersAiEmptyResponse(
+        env,
+        model,
+        { stream_empty: true },
+        { messages: aiMessages, max_tokens: params.maxTokens ?? CHAT_DEFAULT_MAX_TOKENS },
+      );
       return { ok: false, reason: "empty_response" };
     }
     return {
@@ -579,7 +949,7 @@ export async function llmChatCompletionStream(
     system: string;
     user: string;
     maxTokens?: number;
-    onDelta: (chunk: string) => void;
+    onDelta: (chunk: string) => void | Promise<void>;
   },
 ): Promise<ChatOk | ChatErr> {
   if (!workersAiConfigured(env)) return { ok: false, reason: "not_configured" };
@@ -601,7 +971,18 @@ export async function llmChatCompletionStream(
 
     const parsed = await readWorkersAiStream(stream, params.onDelta);
     if (!parsed.content.trim()) {
-      logWorkersAiEmptyResponse(model, { stream_empty: true });
+      logWorkersAiEmptyResponse(
+        env,
+        model,
+        { stream_empty: true },
+        {
+          messages: [
+            { role: "system", content: params.system },
+            { role: "user", content: params.user },
+          ],
+          max_tokens: params.maxTokens ?? CHAT_DEFAULT_MAX_TOKENS,
+        },
+      );
       return { ok: false, reason: "empty_response" };
     }
     return {

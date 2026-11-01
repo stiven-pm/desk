@@ -2,6 +2,11 @@ node_modules/
 .wrangler/
 dist/
 .open-next/
+**/.open-next/
+.next/
+**/.next/
+.turbo/
+*.tsbuildinfo
 .env
 .env.*
 !.env.*.example

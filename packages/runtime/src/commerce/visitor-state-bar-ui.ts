@@ -40,6 +40,22 @@ function parseAllDeskUiBlocks(text: string): {
   return { prose: prose.trimEnd(), blocks };
 }
 
+const STRIP_WHEN_CHECKOUT_BUSY = new Set(["choices", "product_catalog"]);
+
+/** Quita catálogo/botones del modelo cuando el flujo de checkout no está idle. */
+export function stripModelDeskBlocksWhenCheckoutBusy(
+  text: string,
+  checkoutBusy: boolean,
+): string {
+  if (!checkoutBusy || !text.includes(DESK_UI_FENCE)) return text;
+  const { prose, blocks } = parseAllDeskUiBlocks(text);
+  const kept = (blocks ?? []).filter(
+    (b) => !b.type || !STRIP_WHEN_CHECKOUT_BUSY.has(b.type),
+  );
+  if (!kept.length) return prose.trimEnd();
+  return `${prose.trimEnd()}${deskUiFence(kept)}`;
+}
+
 /** Fusiona bloques `choices` de todos los fences y añade ítems nuevos en un solo fence al final. */
 export function consolidateDeskUiFences(
   text: string,

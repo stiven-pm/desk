@@ -15,6 +15,12 @@ import {
   META_VISITOR_STRUGGLE_COUNT,
   parseStruggleCount,
   serializePendingPrompt,
+  CHECKOUT_FLOW_META_KEY,
+  checkoutFlowToVisitorUi,
+  parseCheckoutFlow,
+  checkoutFlowPromptSection,
+  type CheckoutVisitorUi,
+  type VisitorCheckoutUi,
   type VisitorStateBarChoice,
   type VisitorTurnKind,
 } from "@chatbot/domain";
@@ -34,16 +40,24 @@ import {
   type LlmEnv,
 } from "./llm-client";
 import { runAgentWithTools, type AgentChatTurn } from "./integrations/agent";
+import { agentChatTurnsForLlm } from "./visitor-chat-history";
 import { loadBotAgentTools } from "./integrations/load-tools";
 import { validateAssistantMessage } from "@chatbot/chat-ui/validate";
-import {
-  isHandoffGiveUpIntent,
-} from "./human-handoff-intent";
 import {
   formatVisitorSessionForPrompt,
   type VisitorSessionContext,
 } from "@chatbot/domain";
 import { buildDeskSystemPrompt } from "./persona-prompt";
+import {
+  agentFlowToolsEnabled,
+  agentDrivenWizardEnabled,
+  integrationCodeModeEnabled,
+} from "./harness/flags";
+import {
+  deskTrace,
+  deskTraceClip,
+  deskTraceRuntimeFlags,
+} from "./desk-trace";
 import {
   formatSkillsForPrompt,
   loadBotSkills,
@@ -94,7 +108,6 @@ import {
   nativeCatalogPromptCompact,
   type VisitorTurnIntent,
 } from "./intent-router";
-import { buildVisitorSmallTalkReply } from "./visitor-small-talk-reply";
 
 const HANDOFF_REPLY =
   "Listo. Un asesor revisará este chat en breve. Mientras tanto, puedes seguir escribiendo aquí.";
@@ -111,10 +124,12 @@ export interface ConversationEnv extends LlmEnv {
   CHATBOT_ENV?: string;
   TENANT_CACHE?: KVNamespace;
   ANALYTICS?: AnalyticsEngineDataset;
-  HARNESS_LAZY_TOOLS?: string;
   HARNESS_SETUP_VERIFY?: string;
   HARNESS_COMPACT_HISTORY?: string;
-  HARNESS_ROUTER?: string;
+  LOADER?: import("./integrations/desk-codemode-sandbox").WorkerLoaderBinding;
+  DESK_CODEMODE?: {
+    get(options: { props: { botId: string } }): import("./integrations/desk-codemode-sandbox").DeskCodemodeRpc;
+  };
 }
 
 interface StoredMessage {
@@ -125,9 +140,12 @@ interface StoredMessage {
 }
 
 type MessageHandlers = {
-  onStatus?: (status: "thinking") => void;
+  onStatus?: (
+    status: import("./visitor-agent-stream").VisitorAgentStreamStatus,
+    detail?: { toolName?: string },
+  ) => void;
   onStreamStart?: () => void;
-  onDelta?: (chunk: string) => void;
+  onDelta?: (chunk: string) => void | Promise<void>;
 };
 
 export class ConversationDO extends DurableObject<ConversationEnv> {
@@ -232,17 +250,6 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     this.setMeta("idle_warn_sent", "0");
   }
 
-  private async visitorSmallTalkReply(): Promise<string> {
-    let orgName: string | null = null;
-    if (this.env.DB && this.orgId) {
-      const row = await this.env.DB.prepare(`SELECT name FROM orgs WHERE id = ?`)
-        .bind(this.orgId)
-        .first<{ name: string | null }>();
-      orgName = row?.name ?? null;
-    }
-    return buildVisitorSmallTalkReply({ orgName });
-  }
-
   private sessionSectionForPrompt(): string {
     const raw = this.getMeta("visitor_context_json");
     if (!raw) return "";
@@ -276,6 +283,16 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       parts.push(formatCartForPrompt(chat));
     }
     return parts.join("\n\n");
+  }
+
+  private checkoutFlowSectionForPrompt(
+    commerceSvc: CommerceService | null,
+  ): string {
+    const flow = parseCheckoutFlow(this.getMeta(CHECKOUT_FLOW_META_KEY));
+    if (flow.phase === "idle") return "";
+    const cart = commerceSvc ? this.cartForUi(commerceSvc) : emptyCart();
+    const summary = formatCartForPrompt(cart).trim() || "vacío";
+    return checkoutFlowPromptSection(flow, summary);
   }
 
   private cartForUi(commerceSvc: CommerceService): CommerceCart {
@@ -325,11 +342,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     return msg;
   }
 
-  /** Últimos turnos user/assistant para que el agente entienda "muéstrame" tras "qué vendes". */
+  /** Last user/assistant turns for the agent (prose; desk-ui stripped from assistant). */
   private loadAgentChatHistory(): AgentChatTurn[] {
     const turns: AgentChatTurn[] = [];
     for (const row of this.ctx.storage.sql.exec(
-      "SELECT role, text FROM messages ORDER BY at ASC LIMIT 40",
+      "SELECT role, text FROM messages ORDER BY at ASC LIMIT 48",
     )) {
       const role = String(row.role);
       if (role === "user") {
@@ -338,7 +355,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         turns.push({ role: "assistant", content: String(row.text) });
       }
     }
-    return turns.slice(-20);
+    return agentChatTurnsForLlm(turns, 24);
   }
 
   private getStruggleCount(): number {
@@ -354,6 +371,19 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
 
   private clearStruggleCount(): void {
     this.setMeta(META_VISITOR_STRUGGLE_COUNT, "");
+  }
+
+  private visitorCheckoutUi(): CheckoutVisitorUi {
+    return checkoutFlowToVisitorUi(
+      parseCheckoutFlow(this.getMeta(CHECKOUT_FLOW_META_KEY)),
+      { verificationNeeded: false },
+    );
+  }
+
+  private withVisitorUi<T extends object>(
+    result: T,
+  ): T & { visitorUi: CheckoutVisitorUi } {
+    return { ...result, visitorUi: this.visitorCheckoutUi() };
   }
 
   private async visitorAssistantWithHarness(
@@ -375,6 +405,9 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       const svc = this.commerceService();
       const cart = this.cartForUi(svc);
       const cartLineCount = cart.lines.reduce((n, l) => n + l.quantity, 0);
+      const checkoutFlow = parseCheckoutFlow(
+        this.getMeta(CHECKOUT_FLOW_META_KEY),
+      );
       body = applyVisitorAssistantActionHarness({
         text: body,
         phase: this.phase,
@@ -385,6 +418,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         extraChoices: opts?.extraChoices,
         harnessExtraChoices: opts?.harnessExtraChoices,
         struggleCount: this.getStruggleCount(),
+        checkoutFlow,
       });
     }
     return signDeskUiInAssistantText(body, convId, secret);
@@ -400,6 +434,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     creditsEstimate: number;
     checkoutUrl?: string;
     commerceCode?: string;
+    visitorUi: VisitorCheckoutUi;
   }> {
     const convId = this.getMeta("conversation_id") ?? "";
     const secret = this.env.ENCRYPTION_KEY ?? "";
@@ -412,7 +447,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         await this.appendMessage("user", displayText.slice(0, 200));
         const reply = "No pudimos validar esa acción. Usa los botones del chat.";
         await this.appendMessage("assistant", reply);
-        return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+        return this.withVisitorUi({
+          assistantText: reply,
+          phase: this.phase,
+          creditsEstimate: 0,
+        });
       }
       commandText = verified.commandText;
       displayText = verified.displayLabel;
@@ -430,7 +469,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           const reply = "Esa oferta ya no está activa. Escríbeme si necesitas algo.";
           await this.appendMessage("user", displayText);
           await this.appendMessage("assistant", reply);
-          return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+          return this.withVisitorUi({
+          assistantText: reply,
+          phase: this.phase,
+          creditsEstimate: 0,
+        });
         }
         if (offerResolution.type === "decline") {
           await this.appendMessage("user", displayText);
@@ -442,11 +485,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           await this.appendMessage("assistant", assistantText);
           this.setMeta("phase", this.phase);
           this.touchActivity();
-          return {
+          return this.withVisitorUi({
             assistantText,
             phase: this.phase,
             creditsEstimate: 0,
-          };
+          });
         }
         if (offerResolution.type === "use_signed_action") {
           await this.appendMessage("user", displayText);
@@ -462,11 +505,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           await this.appendMessage("assistant", assistantText);
           this.setMeta("phase", this.phase);
           this.touchActivity();
-          return {
+          return this.withVisitorUi({
             assistantText,
             phase: this.phase,
             creditsEstimate: 0,
-          };
+          });
         }
         if (offerResolution.type === "accept") {
           commandText = offerResolution.deskCommand;
@@ -488,12 +531,30 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         await this.appendMessage("user", displayText.slice(0, 120));
         const reply = "Usa los botones del chat para continuar.";
         await this.appendMessage("assistant", reply);
-        return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+        return this.withVisitorUi({
+          assistantText: reply,
+          phase: this.phase,
+          creditsEstimate: 0,
+        });
       }
     }
 
     await this.appendMessage("user", displayText);
     this.touchActivity();
+
+    const traceScope = {
+      orgId: this.orgId,
+      botId: this.botId,
+      conversationId: convId,
+    };
+    deskTrace(this.env, "visitor.turn_in", {
+      displayText: deskTraceClip(displayText, 400),
+      commandText: deskTraceClip(commandText, 400),
+      phase: this.phase,
+      signedDeskAction: Boolean(opts?.deskAction?.trim()),
+      flags: deskTraceRuntimeFlags(this.env),
+    }, traceScope);
+
     this.phase = transitionPhase(this.phase, {
       type: "user_message",
       text: displayText,
@@ -507,15 +568,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       const reply = HANDOFF_REPLY;
       await this.appendMessage("assistant", reply);
       this.touchActivity();
-      return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
-    }
-
-    if (
-      this.phase === "handoff_triage" &&
-      isHandoffGiveUpIntent(commandText)
-    ) {
-      this.phase = transitionPhase(this.phase, { type: "request_human" });
-      this.setMeta("phase", this.phase);
+      return this.withVisitorUi({
+        assistantText: reply,
+        phase: this.phase,
+        creditsEstimate: 0,
+      });
     }
 
     const pendingResolution = await resolvePendingPromptBeforeTurn({
@@ -533,11 +590,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       await this.appendMessage("assistant", assistantText);
       this.setMeta("phase", this.phase);
       this.touchActivity();
-      return {
+      return this.withVisitorUi({
         assistantText,
         phase: this.phase,
         creditsEstimate: 0,
-      };
+      });
     }
     if (pendingResolution.type === "use_signed_action") {
       const cmd = parseInternalDeskCommand(pendingResolution.deskCommand);
@@ -555,11 +612,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       await this.appendMessage("assistant", assistantText);
       this.setMeta("phase", this.phase);
       this.touchActivity();
-      return {
+      return this.withVisitorUi({
         assistantText,
         phase: this.phase,
         creditsEstimate: 0,
-      };
+      });
     }
     if (pendingResolution.type === "accept") {
       commandText = pendingResolution.deskCommand;
@@ -602,6 +659,8 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         svc: commerceSvc,
         fetchLinkedStoreCart,
         turnstileToken: opts?.turnstileToken,
+        agentDrivenWizard: agentDrivenWizardEnabled(this.env),
+        agentFlowTools: agentFlowToolsEnabled(this.env),
       });
       if (native) {
         logVisitorTurn({
@@ -612,6 +671,10 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           phase: this.phase,
           handler: "native",
         });
+        deskTrace(this.env, "visitor.native_handled", {
+          turnKind: native.turnKind,
+          commerceCode: native.commerceCode ?? null,
+        }, traceScope);
         const assistantText = await this.visitorAssistantWithHarness(
           native.assistantText,
           {
@@ -629,13 +692,15 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         await this.appendMessage("assistant", assistantText);
         this.setMeta("phase", this.phase);
         this.touchActivity();
-        return {
+        return this.withVisitorUi({
           assistantText,
           phase: this.phase,
           creditsEstimate: 0,
           checkoutUrl: native.checkoutUrl,
           commerceCode: native.commerceCode,
-        };
+        });
+      } else {
+        deskTrace(this.env, "visitor.native_skipped", {}, traceScope);
       }
     }
 
@@ -644,28 +709,14 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       await this.appendMessage("assistant", reply);
       this.setMeta("phase", this.phase);
       await this.ensureHumanQueueRow();
-      return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
+      return this.withVisitorUi({
+        assistantText: reply,
+        phase: this.phase,
+        creditsEstimate: 0,
+      });
     }
 
     const intent = classifyVisitorTurn(commandText);
-    const catalogForSmallTalk =
-      this.env.DB && (await orgHasPublishedProducts(this.env.DB, this.orgId));
-
-    if (intent === "small_talk" && !catalogForSmallTalk) {
-      logVisitorTurn({
-        orgId: this.orgId,
-        conversationId: this.getMeta("conversation_id"),
-        channel,
-        intent,
-        phase: this.phase,
-        handler: "small_talk",
-      });
-      const reply = await this.visitorSmallTalkReply();
-      await this.appendMessage("assistant", reply);
-      this.setMeta("phase", this.phase);
-      this.touchActivity();
-      return { assistantText: reply, phase: this.phase, creditsEstimate: 0 };
-    }
 
     handlers?.onStatus?.("thinking");
     logVisitorTurn({
@@ -689,14 +740,27 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       chatHistory,
     );
     const svcForUi = this.env.DB ? this.commerceService() : null;
-    const assistantBody = reply.text;
-    let assistantText = svcForUi
-      ? appendCartDeskUiFence(assistantBody, this.cartForUi(svcForUi))
-      : assistantBody;
+    let assistantBody = reply.text;
+    let uiTurnKind =
+      reply.turnKind ?? (reply.pendingPrompt ? "pending_offer" : undefined);
+
+    if (reply.escalateToHuman === true) {
+      await this.requestHumanHandoff({
+        source: "agent.desk_escalate_to_human",
+        title: commandText.slice(0, 200),
+      });
+      this.clearStruggleCount();
+      uiTurnKind = "faq";
+    }
+
+    const cartTurn =
+      reply.turnKind === "cart_view" || reply.turnKind === "cart_updated";
+    let assistantText =
+      svcForUi && cartTurn
+        ? appendCartDeskUiFence(assistantBody, this.cartForUi(svcForUi))
+        : assistantBody;
     assistantText = await this.visitorAssistantWithHarness(assistantText, {
-      turnKind:
-        reply.turnKind ??
-        (reply.pendingPrompt ? "pending_offer" : undefined),
+      turnKind: uiTurnKind,
       recordStruggle: reply.recordStruggle,
     });
     if (
@@ -709,11 +773,11 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     await this.compactVisitorHistoryIfNeeded();
     this.setMeta("phase", this.phase);
     this.touchActivity();
-    return {
+    return this.withVisitorUi({
       assistantText,
       phase: this.phase,
       creditsEstimate: reply.creditsEstimate,
-    };
+    });
   }
 
   private async compactVisitorHistoryIfNeeded(): Promise<void> {
@@ -928,8 +992,9 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     const { readable, writable } = new TransformStream<Uint8Array>();
     const writer = writable.getWriter();
     const enc = new TextEncoder();
-    const writeLine = (obj: Record<string, unknown>) =>
-      writer.write(enc.encode(`${JSON.stringify(obj)}\n`));
+    const writeLine = async (obj: Record<string, unknown>) => {
+      await writer.write(enc.encode(`${JSON.stringify(obj)}\n`));
+    };
 
     this.ctx.waitUntil(
       (async () => {
@@ -940,8 +1005,18 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
               onStreamStart: () => {
                 void writeLine({ type: "start" });
               },
-              onDelta: (chunk) => {
-                void writeLine({ type: "delta", text: chunk });
+              onStatus: (status, detail) => {
+                void writeLine({
+                  type: "status",
+                  status,
+                  toolName: detail?.toolName,
+                });
+                if (status === "thinking" || status === "tool") {
+                  void writeLine({ type: "start" });
+                }
+              },
+              onDelta: async (chunk) => {
+                await writeLine({ type: "delta", text: chunk });
               },
             },
             {
@@ -956,6 +1031,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
             creditsEstimate: result.creditsEstimate,
             checkoutUrl: result.checkoutUrl,
             commerceCode: result.commerceCode,
+            visitorUi: result.visitorUi,
           });
         } catch {
           await writeLine({
@@ -1022,7 +1098,12 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     source?: string;
     title?: string;
   }): Promise<ConversationPhase> {
-    this.phase = transitionPhase(this.phase, { type: "request_human" });
+    const agentInitiated = meta?.source?.startsWith("agent.") === true;
+    if (agentInitiated) {
+      this.phase = "needs_human";
+    } else {
+      this.phase = transitionPhase(this.phase, { type: "request_human" });
+    }
     this.setMeta("phase", this.phase);
     if (this.phase === "needs_human") {
       await this.ensureHumanQueueRow();
@@ -1278,6 +1359,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     pendingPrompt?: import("@chatbot/domain").PendingPrompt | null;
     turnKind?: VisitorTurnKind;
     recordStruggle?: boolean;
+    escalateToHuman?: boolean;
   }> {
     let orgHasCommerce = Boolean(this.env.DB && this.botId);
     if (orgHasCommerce && this.env.DB) {
@@ -1347,8 +1429,31 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         totalPublished: total,
       });
     }
+    const llmTraceScope = {
+      orgId: this.orgId,
+      botId: this.botId,
+      conversationId: this.getMeta("conversation_id") ?? undefined,
+    };
     const ragForLlm = [ragContext, nativeCatalogContext].filter(Boolean).join("\n\n");
     const cartHint = this.cartsPromptSection(commerceSvc);
+    const checkoutFlowHint = this.checkoutFlowSectionForPrompt(commerceSvc);
+    const checkoutFlow = parseCheckoutFlow(
+      this.getMeta(CHECKOUT_FLOW_META_KEY),
+    );
+    deskTrace(
+      this.env,
+      "llm.context_built",
+      {
+        intent,
+        hasHttpTools,
+        attachCommerce,
+        ragChars: ragContext.length,
+        nativeCatalogChars: nativeCatalogContext.length,
+        chatHistoryTurns: chatHistory.length,
+        checkoutPhase: checkoutFlow.phase,
+      },
+      llmTraceScope,
+    );
     let orgDisplayName: string | null = null;
     if (this.env.DB && this.orgId) {
       const orgRow = await this.env.DB.prepare(
@@ -1368,36 +1473,51 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       skillsSection,
       sessionSection: this.sessionSectionForPrompt(),
       handoffTriage: this.phase === "handoff_triage",
+      integrationCodeMode: integrationCodeModeEnabled(this.env),
     });
 
     if (this.env.DB && this.botId && (hasHttpTools || attachCommerce)) {
       const agent = await runAgentWithTools(this.env, {
         botId: this.botId,
+        conversationId: this.getMeta("conversation_id") ?? undefined,
         system,
         user: userText,
-        ragContext: [ragForLlm, cartHint].filter(Boolean).join("\n\n"),
+        ragContext: [ragForLlm, cartHint, checkoutFlowHint]
+          .filter(Boolean)
+          .join("\n\n"),
         chatHistory,
         allowedHostComponents: this.hostComponents,
         commerceService: attachCommerce ? (commerceSvc ?? undefined) : undefined,
         visitorIntent: intent,
-        handlers: {
-          onStreamStart: handlers?.onStreamStart,
-          onDelta: handlers?.onDelta,
-        },
+        checkoutFlowPhase: checkoutFlow.phase,
+        agentFlowTools: agentFlowToolsEnabled(this.env),
+        handlers: handlers
+          ? {
+              onStreamStart: handlers.onStreamStart,
+              onDelta: handlers.onDelta,
+            }
+          : undefined,
       });
-      if (agent.pendingPrompt) {
-        this.setMeta(
-          PENDING_PROMPT_META_KEY,
-          serializePendingPrompt(agent.pendingPrompt),
-        );
-      }
       const textOut = agent.text;
+      deskTrace(
+        this.env,
+        "llm.agent_done",
+        {
+          textChars: textOut.length,
+          textPreview: deskTraceClip(textOut, 320),
+          credits: agent.creditsEstimate,
+          turnKind: agent.turnKind ?? null,
+          recordStruggle: agent.recordStruggle ?? false,
+        },
+        llmTraceScope,
+      );
       return {
         text: textOut,
         creditsEstimate: agent.creditsEstimate,
         pendingPrompt: agent.pendingPrompt,
         turnKind: agent.turnKind,
         recordStruggle: agent.recordStruggle,
+        escalateToHuman: agent.escalateToHuman,
       };
     }
 
@@ -1415,6 +1535,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     const historyMessages = turns.map((t) => ({
       role: t.role as "user" | "assistant",
       content: t.content.slice(0, 3500),
+      checkoutFlowHint,
     }));
 
     const useStream = llmStreamingEnabled(this.env) && Boolean(handlers?.onDelta);

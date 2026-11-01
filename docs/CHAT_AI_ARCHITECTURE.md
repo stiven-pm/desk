@@ -18,34 +18,37 @@
 - **RAG** (lo que usamos): recuperar trozos relevantes de documentos y meterlos en el prompt. Bueno para políticas, manuales, catálogos estáticos.
 - **CAG** (context / cache augmentation): guardar contexto largo precomputado o en caché por sesión/tenant para no re-embedear todo cada vez. Desk ya cachea tenant/bot en KV; RAG por mensaje sigue siendo búsqueda vectorial.
 - **KAG** (knowledge graphs): relaciones explícitas (producto → proveedor → norma). No está en Desk hoy; encaja si un cliente necesita razonamiento multi-entidad muy estructurado (futuro: grafo + RAG).
-- **Routing**: clasificación **en código** (`intent-router.ts`) antes del LLM: saludo sin modelo, commerce tools solo en browse/order/carrito; RAG sigue por mensaje con query enriquecida (`ragQueryForUserMessage`). Mejora futura: clasificador barato para intenciones ambiguas.
+- **Routing**: `classifyVisitorTurn` devuelve `small_talk` (mensaje vacío) o `general`; el resto lo resuelve el agente con tools y contexto de sesión. Ver `intent-router.ts`.
 
-## Arnés del agente (harness)
+## Arnés del agente (visitante)
 
 **No confundir** con **Harness 2 (comercio)** — ver [adr/harness-2-commerce.md](./adr/harness-2-commerce.md) vs [adr/visitor-intent-router.md](./adr/visitor-intent-router.md).
 
-El modelo solo es una pieza; Desk implementa un **arnés** alrededor:
+El modelo es una pieza; Desk implementa un **bucle de agente** alrededor (detalle en [AI.md](./AI.md)):
 
 | Pieza | Implementación |
 |--------|----------------|
-| Router de intención | `intent-router.ts` — saludo local, commerce condicional por turno |
+| Nativo firmado | `tryNativeCommerceTurn` — botones `__desk:*` / `desk.act.v1` antes del LLM |
+| Router de intención | `intent-router.ts` — `small_talk` vs `general`; commerce tools si hay tienda/carrito/catálogo |
 | Catálogo MCP en D1 | `bot_mcp_tool_catalog` — sin `tools/list` en cada mensaje |
-| Tools al LLM | Ranking rápido, router KV, o fase `harness_search_tools` / `harness_select_tools` + hidratación (`agent.ts`) |
-| Skills en prompt | Resumen en visitante/setup; cuerpo con `desk_skill_read` (admin) |
-| Verificación setup | Tras mutaciones, el runtime exige `desk_workspace_status` o probe antes de cerrar |
-| Flags | `HARNESS_LAZY_TOOLS`, `HARNESS_SETUP_VERIFY`, `HARNESS_COMPACT_HISTORY`, `HARNESS_ROUTER` |
+| Tools al LLM | Siempre `commerce_*` cuando hay commerce; HTTP/MCP rankeadas (máx. 5) solo con señal en el mensaje (`tool-rank.ts`, `agent.ts`) |
+| Bucle multi-ronda | Hasta ~8 rondas; errores de tool vuelven al modelo; escalera LLM si el proveedor devuelve vacío (`agent-llm-turn.ts`) |
+| Skills en prompt | Resumen en visitante; cuerpo con `desk_skill_read` (admin setup) |
+| Verificación setup | Tras mutaciones en panel, `desk_workspace_status` / probe (`HARNESS_SETUP_VERIFY`) |
+| Flags visitante | `AGENT_FLOW_TOOLS`, `AGENT_DRIVEN_WIZARD` — checkout agente |
+| Flags ops | `HARNESS_SETUP_VERIFY`, `HARNESS_COMPACT_HISTORY` |
 
-Métricas opcionales: dataset Analytics `desk_events` (`harness/metrics.ts`).
+Métricas opcionales: Analytics `desk_events` (`harness/metrics.ts`). Logs: `desk_agent_llm_attempt`, `desk_llm_ladder`, `desk_agent_turn_rescue`.
 
 ## Optimización de tokens y latencia
 
 - Top-K bajo en RAG y contexto recortado (`docs/COST_PER_MESSAGE.md`).
 - **Caché RAG** en la conversación (misma pregunta ~2 min, sin re-embed).
-- **Ranking de herramientas**: si hay muchas, solo las ~8 schemas hidratadas van al LLM (`tool-rank.ts`, `tool-catalog.ts`).
+- **Ranking de herramientas**: como mucho **5** schemas HTTP/MCP por turno si el mensaje alinea; sin discovery LLM extra.
 - Descripciones de herramientas acotadas (~800 chars).
-- Máximo ~5 vueltas tool-call por mensaje.
-- Instrucciones del tenant: mejor calidad que tamaño; la capa Desk es fija y compacta.
-- Pendiente: clasificador LLM barato para `general` ambiguo, prompt caching del proveedor, stream post-tools, OpenTelemetry por turno.
+- Máximo ~8 vueltas tool-call por mensaje (`runAgentWithTools`).
+- Capa Desk (`persona-prompt.ts`) compacta; tenant = skill de negocio.
+- Pendiente: perfil allow/deny por bot (D1), routing de modelo por fase checkout, eval de conversaciones repetible.
 
 ## UI generativa (`@chatbot/chat-ui`)
 

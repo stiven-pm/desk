@@ -51,7 +51,20 @@ describe("applyVisitorAssistantActionHarness", () => {
     expect(out).toContain(DESK_CMD_MENU);
   });
 
-  it("struggle_count fuerza humano en cuerpo", () => {
+  it("fulfillment_mode permite botones en invariantes", () => {
+    const out = applyVisitorAssistantActionHarness({
+      text: "¿Cómo recibes el pedido?",
+      phase: "automated",
+      cartLineCount: 1,
+      hasPublishedCatalog: true,
+      turnKind: "fulfillment_mode",
+    });
+    expect(checkVisitorAssistantUiInvariants(out, "fulfillment_mode")).toEqual(
+      [],
+    );
+  });
+
+  it("struggle_count no inyecta botón humano", () => {
     const out = applyVisitorAssistantActionHarness({
       text: "No encontré eso.",
       phase: "automated",
@@ -60,7 +73,27 @@ describe("applyVisitorAssistantActionHarness", () => {
       turnKind: "faq",
       struggleCount: 2,
     });
-    expect(out).toContain(DESK_CMD_HUMAN);
-    expect(out).toContain(DESK_CMD_MENU);
+    expect(out).not.toContain(DESK_CMD_HUMAN);
+  });
+
+  it("checkout blocked reintento pasa invariantes", () => {
+    const checkoutFlow = {
+      phase: "blocked" as const,
+      lastBlocker: "turnstile_failed" as const,
+      attempts: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const out = applyVisitorAssistantActionHarness({
+      text: "No pudimos validar la verificación.",
+      phase: "automated",
+      cartLineCount: 1,
+      hasPublishedCatalog: true,
+      turnKind: "checkout",
+      checkoutFlow,
+    });
+    expect(
+      checkVisitorAssistantUiInvariants(out, "checkout", checkoutFlow),
+    ).toEqual([]);
+    expect(out).toContain("Reintentar pago");
   });
 });

@@ -43,6 +43,15 @@ export function validateCommerceBuyerField(
       }
       return { ok: true, value: digits };
     }
+    case "email": {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) {
+        return {
+          ok: false,
+          message: "Indica un correo válido (ej. nombre@dominio.com).",
+        };
+      }
+      return { ok: true, value: t.toLowerCase() };
+    }
     case "city": {
       if (t.length < 3 || !/[\p{L}]/u.test(t)) {
         return {

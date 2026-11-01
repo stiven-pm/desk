@@ -44,6 +44,19 @@ npm run desk:ship:test
 npm run desk:ship:prod
 ```
 
+## Logs del agente (`DESK_TRACE`, `DESK_LLM_DEBUG`)
+
+Van al **Worker** (`desk-api`), no a la consola del navegador del widget.
+
+1. Pon `DESK_TRACE=1` (y opcional `DESK_LLM_DEBUG=1`) en `.env.production` — el render de wrangler los sube como `[vars]`.
+2. Tras deploy, en otra terminal:
+
+```bash
+npm run desk:tail:prod
+```
+
+Filtra líneas JSON: `desk_trace`, `desk_llm_ladder`, `desk_agent_turn_rescue`, `desk_llm_attempt`. Cada turno del visitante pasa por el DO de conversación en ese worker.
+
 ## Paridad test ↔ prod
 
 El **mismo artefacto** se despliega en ambos entornos. Validar en test antes de prod:

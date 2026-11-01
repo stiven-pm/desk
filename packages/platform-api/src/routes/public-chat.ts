@@ -391,6 +391,8 @@ export function registerPublicChatRoutes(app: Hono<AppEnv>): void {
       creditsEstimate: data.creditsEstimate ?? 0,
       checkoutUrl: (data as { checkoutUrl?: string }).checkoutUrl,
       code: (data as { commerceCode?: string }).commerceCode,
+      visitorUi: (data as { visitorUi?: { requiresTurnstile: boolean } })
+        .visitorUi,
     });
   });
 
@@ -491,6 +493,8 @@ export function registerPublicChatRoutes(app: Hono<AppEnv>): void {
         text: payMsg.assistantText ?? "",
         phase: payMsg.phase ?? row.phase,
         code: (payMsg as { commerceCode?: string }).commerceCode,
+        visitorUi: (payMsg as { visitorUi?: { requiresTurnstile: boolean } })
+          .visitorUi,
       });
     }
 

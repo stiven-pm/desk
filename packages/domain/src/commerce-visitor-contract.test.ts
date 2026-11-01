@@ -7,7 +7,6 @@ import {
 import { parseInternalDeskCommand } from "./desk-action";
 import {
   assistantTextIncludesDeskBlock,
-  buildCommerceChannelContractSection,
   DESK_UI_BLOCK_TYPE,
   nativeDeskActionSpec,
 } from "./commerce-visitor-contract";
@@ -31,9 +30,7 @@ describe("commerce-visitor-contract", () => {
   it("documenta menú como catálogo nativo", () => {
     const menu = nativeDeskActionSpec("menu");
     expect(menu?.deskUiBlocks).toContain(DESK_UI_BLOCK_TYPE.productCatalog);
-    const section = buildCommerceChannelContractSection();
-    expect(section).toContain("Menú");
-    expect(section).toContain(DESK_UI_BLOCK_TYPE.productCatalog);
+    expect(menu?.visitorLabel).toContain("Menú");
   });
 
   it("detecta bloques desk-ui en texto", () => {

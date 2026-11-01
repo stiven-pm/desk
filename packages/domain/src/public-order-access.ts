@@ -1,6 +1,6 @@
-export function isLegacyPublicOrderRef(key: string): boolean {
-  return /^RK-/i.test(key.trim());
-}
+import { isLegacyPublicOrderRef } from "./order-ref-normalize";
+
+export { isLegacyPublicOrderRef };
 
 /** UUID en `sales_orders.public_access_token`. */
 export function isPublicOrderAccessToken(key: string): boolean {

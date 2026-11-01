@@ -17,12 +17,14 @@ type Fulfillment = {
 type Order = {
   id: string;
   public_ref: string | null;
+  status: string;
   currency: string;
   subtotal_cents: number;
   summary: string;
   buyer_json: string | null;
   fulfillment_json: string | null;
   lines_json: string | null;
+  ops_log_json: string | null;
   created_at: string;
 };
 
@@ -101,6 +103,10 @@ export default function OrdersPage() {
   const [sort, setSort] = useState<SortOrder>("desc");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editAddress, setEditAddress] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editPhone, setEditPhone] = useState("");
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
@@ -119,6 +125,28 @@ export default function OrdersPage() {
     setOrders(d.orders);
   }, [sort, deliveryFilter, todayOnly, fromDate, toDate]);
 
+  const patchOrder = useCallback(
+    async (
+      id: string,
+      body: Record<string, unknown>,
+    ) => {
+      setSaving(true);
+      setError(null);
+      try {
+        await api(`/v1/admin/sales-orders/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al guardar");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [load],
+  );
+
   useEffect(() => {
     void load().catch((e) =>
       setError(e instanceof Error ? e.message : "Error al cargar"),
@@ -129,6 +157,14 @@ export default function OrdersPage() {
     () => orders.find((o) => o.id === selectedId) ?? null,
     [orders, selectedId],
   );
+
+  useEffect(() => {
+    if (!selected) return;
+    const f = parseFulfillment(selected.fulfillment_json);
+    setEditAddress(f?.address ?? "");
+    setEditCity(f?.city ?? "");
+    setEditPhone(f?.phone ?? "");
+  }, [selected]);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-8">
@@ -332,6 +368,103 @@ export default function OrdersPage() {
                 </div>
               );
             })()}
+            {(() => {
+              let ops: Array<{ at: string; type: string; text?: string }> = [];
+              if (selected.ops_log_json) {
+                try {
+                  ops = JSON.parse(selected.ops_log_json) as typeof ops;
+                } catch {
+                  ops = [];
+                }
+              }
+              if (!ops.length) return null;
+              return (
+                <ul className="mt-4 space-y-1 text-xs text-[var(--muted)]">
+                  {ops.map((e, i) => (
+                    <li key={`${e.at}-${i}`}>
+                      {new Date(e.at).toLocaleString("es-CO")} · {e.type}
+                      {e.text ? `: ${e.text}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={saving || selected.status === "fulfilled"}
+                className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+                onClick={() =>
+                  void patchOrder(selected.id, { status: "fulfilled" })
+                }
+              >
+                Entregado
+              </button>
+              <button
+                type="button"
+                disabled={saving || selected.status === "cancelled"}
+                className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+                onClick={() => {
+                  if (!window.confirm("¿Cancelar este pedido?")) return;
+                  void patchOrder(selected.id, { status: "cancelled" });
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+                onClick={() => {
+                  const note = window.prompt("Novedad del pedido");
+                  if (note?.trim()) {
+                    void patchOrder(selected.id, { note: note.trim() });
+                  }
+                }}
+              >
+                Novedad
+              </button>
+            </div>
+            {parseFulfillment(selected.fulfillment_json)?.mode ===
+            "delivery" ? (
+              <div className="mt-4 space-y-2">
+                <input
+                  className="w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                  placeholder="Dirección"
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                />
+                <input
+                  className="w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                  placeholder="Ciudad"
+                  value={editCity}
+                  onChange={(e) => setEditCity(e.target.value)}
+                />
+                <input
+                  className="w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                  placeholder="Teléfono contacto"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={saving}
+                  className="rounded-full border border-[var(--foreground)] px-3 py-1.5 text-xs font-medium"
+                  onClick={() =>
+                    void patchOrder(selected.id, {
+                      fulfillment: {
+                        mode: "delivery",
+                        address: editAddress,
+                        city: editCity,
+                        phone: editPhone,
+                      },
+                    })
+                  }
+                >
+                  Guardar domicilio
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       )}

@@ -2,27 +2,26 @@
 
 ## Estado
 
-Aceptado.
+Aceptado (actualizado oct 2026 — router simplificado).
 
 ## Contexto
 
-El chat enrutaba casi todo al LLM con un system prompt muy grande (RAG + Harness 2 commerce + tools). Eso aumentaba costo, latencia y fallos visibles (p. ej. saludos cuando Workers AI fallaba). La industria recomienda **orquestación system-driven** antes del modelo grande.
+El chat enrutaba casi todo al LLM con un system prompt muy grande (RAG + commerce + tools). Eso aumentaba costo, latencia y fallos visibles.
 
-## Decisión
+## Decisión (vigente)
 
-1. **`classifyVisitorTurn`** en `packages/runtime/src/intent-router.ts` antes de `callLlm`.
-2. Intenciones: `small_talk`, `catalog_browse`, `commerce_order`, `faq_policy`, `general`.
-3. **`small_talk`**: respuesta local (`visitor-small-talk-reply.ts`), sin LLM, todos los canales.
-4. **`shouldAttachCommerceTools`**: tools `commerce_*` y sección Harness 2 en prompt solo en browse/order o carrito con líneas.
-5. **Telemetría**: logs JSON `desk_visitor_turn` y `desk_llm_visitor_failure` (grep en tail del Worker).
+1. **`classifyVisitorTurn`** en `packages/runtime/src/intent-router.ts` antes del agente/LLM.
+2. Intenciones efectivas: **`small_talk`** (solo mensaje vacío) y **`general`** (todo lo demás va al LLM/agente).
+3. **`shouldAttachCommerceTools`**: tools `commerce_*` y contexto de tienda cuando hay catálogo nativo, carrito con líneas u org con commerce.
+4. **Telemetría**: `desk_visitor_turn`, `desk_llm_visitor_failure`, `desk_agent_llm_attempt`, `desk_llm_ladder`, `desk_agent_turn_rescue`.
 
 ## Consecuencias
 
-- FAQ y preguntas generales no cargan el arnés de venta si no hay carrito.
-- El **Harness 2** (estado carrito, D1) sigue en el DO; solo se **expone al modelo** cuando el turno lo pide.
-- Pendiente: router con modelo barato para intenciones ambiguas; trazas OpenTelemetry.
+- No hay clasificador NL por regex ni respuestas locales de saludo (salvo mensaje vacío → `small_talk`).
+- El agente elige tools en bucle; fallos de tool vuelven al modelo; fallo del proveedor usa escalera antes del mensaje de rescate.
+- Histórico: existieron intenciones `catalog_browse` / `faq_policy` y arnés `harness_search_tools`; **retirados** — ver [CHAT_AI_ARCHITECTURE.md](../CHAT_AI_ARCHITECTURE.md) y [AI.md](../AI.md).
 
 ## Relación
 
 - Comercio: [harness-2-commerce.md](./harness-2-commerce.md) (producto).
-- Arnés de tools: [../CHAT_AI_ARCHITECTURE.md](../CHAT_AI_ARCHITECTURE.md) (`harness_search_tools`, lazy catalog).
+- Agente visitante: [../CHAT_AI_ARCHITECTURE.md](../CHAT_AI_ARCHITECTURE.md), [../AI.md](../AI.md).

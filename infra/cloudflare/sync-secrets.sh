@@ -57,9 +57,8 @@ push_secrets() {
   local wrangler_env=()
   if [[ "$env_name" == "test" ]]; then
     wrangler_env=(--env test)
-  else
-    wrangler_env=(--env "")
   fi
+  # Production: top-level worker "desk-api" in wrangler.toml (no --env flag).
   [[ -f "$env_file" ]] || { echo "Missing $env_file" >&2; return 1; }
   for key in "${SECRET_KEYS[@]}"; do
     if val="$(read_env_value "$env_file" "$key" 2>/dev/null)"; then

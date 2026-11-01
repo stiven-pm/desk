@@ -1,5 +1,9 @@
 import type { Hono } from "hono";
 import { isLegacyPublicOrderRef, parseCommerceManifest } from "@chatbot/domain";
+import {
+  publicRefSqlBindings,
+  publicRefWhereClause,
+} from "@chatbot/runtime/commerce/public-ref-db-lookup";
 import { z } from "zod";
 import type { AppEnv } from "../types";
 import { apiError, json } from "../lib/http";
@@ -54,10 +58,16 @@ async function loadPublicOrderRow(
        LEFT JOIN org_commerce_config c ON c.org_id = o.org_id`;
 
   if (isLegacyPublicOrderRef(trimmed)) {
-    return db
-      .prepare(`${baseSql} WHERE o.public_ref = ?`)
-      .bind(trimmed)
-      .first<PublicOrderRow>();
+    const binds = publicRefSqlBindings(trimmed);
+    if (binds) {
+      const row = await db
+        .prepare(
+          `${baseSql} WHERE ${publicRefWhereClause("o.public_ref")} ORDER BY o.created_at DESC LIMIT 1`,
+        )
+        .bind(...binds)
+        .first<PublicOrderRow>();
+      if (row) return row;
+    }
   }
 
   return db

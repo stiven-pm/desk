@@ -6,7 +6,3 @@ export function formatPublicOrderRef(): string {
 export function formatPublicAccessToken(): string {
   return crypto.randomUUID();
 }
-
-export function isLegacyPublicOrderRef(key: string): boolean {
-  return /^RK-/i.test(key.trim());
-}

@@ -6,18 +6,15 @@ import {
 } from "./intent-router";
 
 describe("classifyVisitorTurn", () => {
-  it("detects small talk", () => {
-    expect(classifyVisitorTurn("Hola")).toBe("small_talk");
-    expect(classifyVisitorTurn("gracias!")).toBe("small_talk");
+  it("empty is small_talk for metering only", () => {
+    expect(classifyVisitorTurn("")).toBe("small_talk");
+    expect(classifyVisitorTurn("   ")).toBe("small_talk");
   });
 
-  it("treats other messages as general", () => {
+  it("any other message is general (LLM + tools)", () => {
+    expect(classifyVisitorTurn("Hola")).toBe("general");
+    expect(classifyVisitorTurn("gracias!")).toBe("general");
     expect(classifyVisitorTurn("qué productos tienen?")).toBe("general");
-    expect(classifyVisitorTurn("Menú")).toBe("general");
-    expect(classifyVisitorTurn("quiero comprar algo")).toBe("general");
-    expect(classifyVisitorTurn("cuál es la política de devoluciones?")).toBe(
-      "general",
-    );
   });
 });
 

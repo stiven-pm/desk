@@ -40,6 +40,11 @@ WORKERS_AI_CHAT_MODEL = "{{WORKERS_AI_CHAT_MODEL_PROD}}"
 WORKERS_AI_EMBEDDING_MODEL = "{{WORKERS_AI_EMBEDDING_MODEL_PROD}}"
 LLM_REQUEST_TIMEOUT_MS = "{{LLM_REQUEST_TIMEOUT_MS_PROD}}"
 LLM_STREAM_ENABLED = "{{LLM_STREAM_ENABLED_PROD}}"
+AGENT_FLOW_TOOLS = "{{AGENT_FLOW_TOOLS_PROD}}"
+AGENT_DRIVEN_WIZARD = "{{AGENT_DRIVEN_WIZARD_PROD}}"
+INTEGRATION_CODE_MODE = "{{INTEGRATION_CODE_MODE_PROD}}"
+DESK_TRACE = "{{DESK_TRACE_PROD}}"
+DESK_LLM_DEBUG = "{{DESK_LLM_DEBUG_PROD}}"
 EMBEDDING_DIMENSIONS = "{{EMBEDDING_DIMENSIONS_PROD}}"
 DESK_FROM_EMAIL = "{{DESK_FROM_EMAIL_PROD}}"
 CF_ACCOUNT_ID = "{{CF_ACCOUNT_ID}}"
@@ -103,6 +108,14 @@ bindings = [{ name = "CONVERSATION", class_name = "ConversationDO" }]
 tag = "v1"
 new_sqlite_classes = ["ConversationDO"]
 
+[[worker_loaders]]
+binding = "LOADER"
+
+[[services]]
+binding = "DESK_CODEMODE"
+service = "desk-api"
+entrypoint = "DeskCodemodeHost"
+
 [triggers]
 crons = ["0 * * * *", "0 3 * * *"]
 
@@ -149,6 +162,11 @@ WORKERS_AI_CHAT_MODEL = "{{WORKERS_AI_CHAT_MODEL_TEST}}"
 WORKERS_AI_EMBEDDING_MODEL = "{{WORKERS_AI_EMBEDDING_MODEL_TEST}}"
 LLM_REQUEST_TIMEOUT_MS = "{{LLM_REQUEST_TIMEOUT_MS_TEST}}"
 LLM_STREAM_ENABLED = "{{LLM_STREAM_ENABLED_TEST}}"
+AGENT_FLOW_TOOLS = "{{AGENT_FLOW_TOOLS_TEST}}"
+AGENT_DRIVEN_WIZARD = "{{AGENT_DRIVEN_WIZARD_TEST}}"
+INTEGRATION_CODE_MODE = "{{INTEGRATION_CODE_MODE_TEST}}"
+DESK_TRACE = "{{DESK_TRACE_TEST}}"
+DESK_LLM_DEBUG = "{{DESK_LLM_DEBUG_TEST}}"
 EMBEDDING_DIMENSIONS = "{{EMBEDDING_DIMENSIONS_TEST}}"
 DESK_FROM_EMAIL = "{{DESK_FROM_EMAIL_TEST}}"
 CF_ACCOUNT_ID = "{{CF_ACCOUNT_ID}}"
@@ -211,6 +229,14 @@ bindings = [{ name = "CONVERSATION", class_name = "ConversationDO" }]
 [[env.test.migrations]]
 tag = "v1"
 new_sqlite_classes = ["ConversationDO"]
+
+[[env.test.worker_loaders]]
+binding = "LOADER"
+
+[[env.test.services]]
+binding = "DESK_CODEMODE"
+service = "desk-api"
+entrypoint = "DeskCodemodeHost"
 
 [[env.test.routes]]
 pattern = "{{API_ROUTE_HOST_TEST}}"

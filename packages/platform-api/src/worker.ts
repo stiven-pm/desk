@@ -1,6 +1,6 @@
 import { createApp } from "./app";
 import type { Env } from "./types";
-import { ConversationDO } from "@chatbot/runtime";
+import { ConversationDO, DeskCodemodeHost } from "@chatbot/runtime";
 import { processIngestJob, type IngestQueueMessage } from "./lib/ingest";
 import { periodStartIso } from "./lib/http";
 import { purgeExpiredConversations } from "./lib/log-purge";
@@ -9,7 +9,7 @@ import { proxyPublicConversationWebSocket } from "./lib/public-websocket";
 import { processEnterpriseShellQueue } from "./lib/enterprise-shell-worker";
 import { syncBuiltinIntegrationTemplates } from "./lib/builtin-integrations";
 
-export { ConversationDO };
+export { ConversationDO, DeskCodemodeHost };
 
 const app = createApp();
 

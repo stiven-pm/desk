@@ -34,10 +34,11 @@ En código, el contador de créditos usa **solo tokens del chat** (`prompt_token
 
 Para economía y wallet, asume que el coste real por mensaje ≈ **chat + 1× embed query + 1× Vectorize query + DO/Worker/D1**.
 
-### Herramientas en el prompt (arnés)
+### Herramientas en el prompt (agente visitante)
 
-- El visitante **no** envía el schema de todas las HTTP/MCP del bot: se cargan desde D1 (MCP catalog) y al modelo van **≤8** funciones hidratadas por turno (`MAX_SCHEMAS_PER_TURN`), o fase de descubrimiento con `harness_search_tools`.
-- El coste dominante con integraciones gordas era repetir cientos de schemas cada turno; el arnés evita ese multiplicador (ver `docs/CHAT_AI_ARCHITECTURE.md`).
+- Integraciones HTTP/MCP se cargan desde D1; al modelo van **todas las `commerce_*`** cuando hay tienda activa, más **hasta 5** HTTP/MCP solo si el mensaje tiene señal (`MAX_HTTP_TOOLS_PER_TURN` en `tool-rank.ts`).
+- No hay fase discovery LLM ni schemas completos del bot en cada turno.
+- Un turno difícil puede hacer **varias** llamadas Workers AI (bucle tools + escalera en `agent-llm-turn.ts`); ver logs `desk_agent_llm_attempt` / `desk_llm_ladder` y [AI.md](./AI.md).
 
 ---
 

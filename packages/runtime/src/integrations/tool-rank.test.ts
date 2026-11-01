@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTool } from "./types";
 import {
+  MAX_HTTP_TOOLS_PER_TURN,
   rankToolsForUserMessage,
-  shouldUseToolFastPath,
   scoreToolsForMessage,
 } from "./tool-rank";
 
@@ -22,29 +22,30 @@ function httpTool(name: string, desc: string): AgentTool {
   };
 }
 
-describe("tool-rank harness", () => {
-  it("returns empty for small talk", () => {
+describe("tool-rank", () => {
+  it("returns empty when message shares no tokens with tools", () => {
     const tools = [httpTool("get_invoice", "Obtiene factura cliente")];
     expect(rankToolsForUserMessage(tools, "hola")).toEqual([]);
+    expect(rankToolsForUserMessage(tools, "we")).toEqual([]);
   });
 
-  it("fast path when keyword aligns", () => {
+  it("ranks invoice tool when message aligns", () => {
     const tools = [
       httpTool("get_invoice", "Obtiene factura del cliente"),
       httpTool("list_products", "Lista productos catálogo"),
     ];
-    const fast = shouldUseToolFastPath(tools, "necesito la factura del cliente");
-    expect(fast?.map((t) => t.tool.name)).toContain("get_invoice");
+    const ranked = rankToolsForUserMessage(tools, "necesito la factura del cliente");
+    expect(ranked.map((t) => t.tool.name)).toContain("get_invoice");
   });
 
-  it("scores many tools without sending all schemas", () => {
+  it("caps HTTP tools per turn", () => {
     const tools = Array.from({ length: 100 }, (_, i) =>
       httpTool(`tool_${i}`, `descripcion generica ${i}`),
     );
     const scored = scoreToolsForMessage(tools, "pedido producto stock");
     expect(scored.length).toBe(100);
     expect(rankToolsForUserMessage(tools, "pedido producto stock").length).toBeLessThanOrEqual(
-      8,
+      MAX_HTTP_TOOLS_PER_TURN,
     );
   });
 });

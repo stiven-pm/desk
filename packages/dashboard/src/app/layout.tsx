@@ -14,6 +14,11 @@ export const metadata: Metadata = {
     icon: [{ url: "/brand/desk-mark-white.jpg", type: "image/jpeg" }],
     apple: [{ url: "/brand/desk-icon-app.jpg", type: "image/jpeg" }],
   },
+  appleWebApp: {
+    capable: true,
+    title: "Desk",
+    statusBarStyle: "default",
+  },
   openGraph: {
     title: "Desk — atención al cliente con IA",
     description:

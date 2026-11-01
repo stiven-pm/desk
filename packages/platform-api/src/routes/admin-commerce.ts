@@ -565,7 +565,7 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
 
     let sql = `SELECT id, public_ref, status, currency, subtotal_cents, summary, buyer_json,
                       fulfillment_json, lines_json, conversation_id,
-                      payment_evidence_meta_json, created_at, updated_at
+                      payment_evidence_meta_json, ops_log_json, created_at, updated_at
                FROM sales_orders
                WHERE org_id = ?
                  AND status IN ('paid', 'pending_fulfillment')`;
@@ -591,6 +591,114 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
 
     const rows = await c.env.DB.prepare(sql).bind(...binds).all();
     return json({ orders: rows.results ?? [] });
+  });
+
+  app.patch("/v1/admin/sales-orders/:id", async (c) => {
+    const auth = await requireAdminRole(c.req.raw, c.env, [
+      "owner",
+      "admin",
+      "developer",
+    ]);
+    if ("response" in auth) return auth.response;
+
+    const orderId = c.req.param("id").trim();
+    const bodySchema = z.object({
+      status: z.enum(["cancelled", "fulfilled"]).optional(),
+      note: z.string().max(500).optional(),
+      fulfillment: z
+        .object({
+          mode: z.enum(["pickup", "delivery"]).optional(),
+          fullName: z.string().max(120).optional(),
+          phone: z.string().max(40).optional(),
+          city: z.string().max(80).optional(),
+          address: z.string().max(240).optional(),
+          extra: z.string().max(240).optional(),
+        })
+        .optional(),
+    });
+    const parsed = bodySchema.safeParse(await c.req.json());
+    if (!parsed.success) return apiError("bad_request", 400);
+
+    const row = await c.env.DB.prepare(
+      `SELECT id, status, fulfillment_json, ops_log_json FROM sales_orders WHERE id = ? AND org_id = ?`,
+    )
+      .bind(orderId, auth.user.orgId)
+      .first<{
+        id: string;
+        status: string;
+        fulfillment_json: string | null;
+        ops_log_json: string | null;
+      }>();
+    if (!row) return apiError("not_found", 404);
+
+    type OpsEntry = { at: string; type: string; text?: string };
+    let opsLog: OpsEntry[] = [];
+    if (row.ops_log_json) {
+      try {
+        opsLog = JSON.parse(row.ops_log_json) as OpsEntry[];
+      } catch {
+        opsLog = [];
+      }
+    }
+
+    const { status, note, fulfillment } = parsed.data;
+    if (note?.trim()) {
+      opsLog.push({
+        at: new Date().toISOString(),
+        type: "note",
+        text: note.trim(),
+      });
+    }
+    if (status === "cancelled") {
+      opsLog.push({ at: new Date().toISOString(), type: "cancelled" });
+    }
+    if (status === "fulfilled") {
+      opsLog.push({ at: new Date().toISOString(), type: "delivered" });
+    }
+
+    let fulfillmentJson = row.fulfillment_json;
+    if (fulfillment && Object.keys(fulfillment).length > 0) {
+      let base: Record<string, unknown> = {};
+      if (row.fulfillment_json) {
+        try {
+          base = JSON.parse(row.fulfillment_json) as Record<string, unknown>;
+        } catch {
+          base = {};
+        }
+      }
+      const merged = {
+        ...base,
+        ...fulfillment,
+        capturedAt: String(base.capturedAt ?? new Date().toISOString()),
+      };
+      fulfillmentJson = JSON.stringify(merged);
+      opsLog.push({
+        at: new Date().toISOString(),
+        type: "fulfillment_update",
+      });
+    }
+
+    const nextStatus = status ?? row.status;
+    const fulfillmentParam = fulfillmentJson ?? null;
+    await c.env.DB.prepare(
+      `UPDATE sales_orders
+       SET status = ?,
+           fulfillment_json = CASE WHEN ? IS NOT NULL THEN ? ELSE fulfillment_json END,
+           ops_log_json = ?,
+           updated_at = datetime('now')
+       WHERE id = ? AND org_id = ?`,
+    )
+      .bind(
+        nextStatus,
+        fulfillmentParam,
+        fulfillmentParam,
+        JSON.stringify(opsLog),
+        orderId,
+        auth.user.orgId,
+      )
+      .run();
+
+    return json({ ok: true, status: nextStatus, opsLog });
   });
 
   app.post("/v1/admin/sales-orders/:id/sync-payment", async (c) => {

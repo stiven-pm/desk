@@ -1,5 +1,6 @@
 import type { CommerceBuyer, CommerceCart } from "@chatbot/domain";
 import {
+  CHECKOUT_FLOW_META_KEY,
   COMMERCE_VISITOR_LABEL,
   missingCommerceBuyerFields,
   NATIVE_COMMERCE_LEAD,
@@ -7,6 +8,7 @@ import {
   nativeCartAddFailed,
   nativeLineNotesPrompt,
   nativePriceChangedLead,
+  parseCheckoutFlow,
   parseInternalDeskCommand,
   resolveNativeCheckoutFailure,
   validateCommerceBuyerField,
@@ -15,6 +17,11 @@ import {
 } from "@chatbot/domain";
 import type { CommerceService } from "./commerce-service";
 import { parseCart } from "./cart-store";
+import {
+  advanceCheckout,
+  flowFromAdvance,
+  type AdvanceResult,
+} from "./checkout-advance";
 import {
   appendCartDeskUiFence,
   appendCheckoutPaymentDeskUi,
@@ -33,9 +40,7 @@ import {
 } from "./native-catalog";
 import { NATIVE_MENU_BROWSE_LIMIT } from "./catalog-search";
 import { reservedQtyForProduct } from "./stock-reservations";
-import {
-  buildNoStockVisitorReply,
-} from "./stock-availability";
+import { buildNoStockVisitorReply } from "./stock-availability";
 import { buildProductCatalogPickerDeskUi } from "./native-catalog-ui";
 import { chatCatalogTitle } from "./native-catalog";
 import {
@@ -99,6 +104,27 @@ function buyerPrompt(field: keyof CommerceBuyer): string {
   return nativeBuyerFieldPrompt(field);
 }
 
+async function persistBuyerAndContinue(args: {
+  svc: CommerceService;
+  setMeta: (key: string, value: string) => void;
+  clearUx: () => void;
+  payArgs: Parameters<typeof continueTowardCheckout>[0];
+  buyer: CommerceBuyer;
+}): Promise<NativeCommerceTurnResult> {
+  await args.svc.persistBuyer(args.buyer);
+  args.svc.clearCheckoutFulfillment();
+  const next = await nextBuyerField(args.svc, args.buyer);
+  if (next) {
+    args.setMeta(
+      META_COMMERCE_UX,
+      JSON.stringify({ mode: "buyer", field: next }),
+    );
+    return nativeTurn(buyerPrompt(next), "buyer_field");
+  }
+  args.clearUx();
+  return continueTowardCheckout(args.payArgs);
+}
+
 function parseUx(raw: string | null): CommerceUxState | null {
   if (!raw?.trim()) return null;
   try {
@@ -118,36 +144,6 @@ function parseUx(raw: string | null): CommerceUxState | null {
   } catch {
     return null;
   }
-}
-
-function checkoutFailureNativeTurn(
-  checkout: { code?: string; subtotalCents?: number; currency?: string },
-  cartCurrency: string,
-): NativeCommerceTurnResult {
-  const resolved = resolveNativeCheckoutFailure({
-    code: checkout.code,
-    subtotalCents: checkout.subtotalCents,
-    currency: checkout.currency,
-    cartCurrency,
-    formatMoney: formatMoneyCents,
-  });
-  if (resolved.type === "buyer_consent") {
-    return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
-  }
-  if (checkout.code === "fulfillment_required") {
-    return nativeTurn(buildFulfillmentModeLead(), "fulfillment_mode");
-  }
-  if (resolved.type === "price_confirm") {
-    return nativeTurn(nativePriceChangedLead(resolved.totalFormatted), "checkout", {
-      harnessExtraChoices: [
-        {
-          label: COMMERCE_VISITOR_LABEL.confirmPriceButton,
-          message: DESK_CMD_CONFIRM_PRICE,
-        },
-      ],
-    });
-  }
-  return nativeTurn(resolved.message, "checkout", { commerceCode: checkout.code });
 }
 
 function parsePickQtyReply(
@@ -317,35 +313,39 @@ async function addProductWithQuantity(args: {
   );
 }
 
-async function runCheckout(
-  svc: CommerceService,
-  opts?: {
-    confirmPriceChange?: boolean;
-    confirmCartChange?: boolean;
-    turnstileToken?: string;
-  },
-): Promise<NativeCommerceTurnResult> {
-  const checkout = await svc.startCheckout({
-    confirmPriceChange: opts?.confirmPriceChange,
-    confirmCartChange: opts?.confirmCartChange,
-    turnstileToken: opts?.turnstileToken,
+function checkoutFailureNativeTurn(
+  checkout: { code?: string; subtotalCents?: number; currency?: string },
+  cartCurrency: string,
+): NativeCommerceTurnResult {
+  const resolved = resolveNativeCheckoutFailure({
+    code: checkout.code,
+    subtotalCents: checkout.subtotalCents,
+    currency: checkout.currency,
+    cartCurrency,
+    formatMoney: formatMoneyCents,
   });
-  if (!checkout.ok) {
-    return checkoutFailureNativeTurn(checkout, svc.getCart().currency);
+  if (resolved.type === "buyer_consent") {
+    return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
   }
-  return nativeTurn(
-    appendCheckoutPaymentDeskUi(NATIVE_COMMERCE_LEAD.checkoutLink, checkout.checkoutUrl),
-    "checkout",
-    { checkoutUrl: checkout.checkoutUrl },
-  );
-}
-
-function promptFulfillmentMode(): NativeCommerceTurnResult {
-  return nativeTurn(buildFulfillmentModeLead(), "fulfillment_mode");
+  if (checkout.code === "fulfillment_required") {
+    return nativeTurn(buildFulfillmentModeLead(), "fulfillment_mode");
+  }
+  if (resolved.type === "price_confirm") {
+    return nativeTurn(nativePriceChangedLead(resolved.totalFormatted), "checkout", {
+      harnessExtraChoices: [
+        {
+          label: COMMERCE_VISITOR_LABEL.confirmPriceButton,
+          message: DESK_CMD_CONFIRM_PRICE,
+        },
+      ],
+    });
+  }
+  return nativeTurn(resolved.message, "checkout", { commerceCode: checkout.code });
 }
 
 async function continueTowardCheckout(args: {
   svc: CommerceService;
+  getMeta: (key: string) => string | null;
   setMeta: (key: string, value: string) => void;
   turnstileToken?: string;
   checkoutOpts?: {
@@ -353,31 +353,82 @@ async function continueTowardCheckout(args: {
     confirmCartChange?: boolean;
   };
 }): Promise<NativeCommerceTurnResult> {
-  const { svc, setMeta, turnstileToken, checkoutOpts } = args;
-  const next = await nextBuyerField(svc, svc.getBuyer());
-  if (next) {
-    setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-    return nativeTurn(buyerPrompt(next), "buyer_field");
+  const { svc, getMeta, setMeta, turnstileToken, checkoutOpts } = args;
+  const prev = parseCheckoutFlow(getMeta(CHECKOUT_FLOW_META_KEY));
+  const r = await advanceCheckout(svc, {
+    turnstileToken,
+    ...checkoutOpts,
+  });
+  setMeta(
+    CHECKOUT_FLOW_META_KEY,
+    JSON.stringify(flowFromAdvance(prev, r)),
+  );
+
+  switch (r.step) {
+    case "ask_fields": {
+      const field = r.fields[0];
+      if (!field) {
+        setMeta(META_COMMERCE_UX, "");
+        return continueTowardCheckout(args);
+      }
+      setMeta(
+        META_COMMERCE_UX,
+        JSON.stringify({ mode: "buyer", field }),
+      );
+      return nativeTurn(
+        buyerPrompt(field as keyof CommerceBuyer),
+        "buyer_field",
+      );
+    }
+    case "ask_consent":
+      setMeta(META_COMMERCE_UX, "");
+      return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
+    case "ask_fulfillment":
+      setMeta(META_COMMERCE_UX, "");
+      return nativeTurn(buildFulfillmentModeLead(), "fulfillment_mode");
+    case "confirm_price":
+      return nativeTurn(
+        nativePriceChangedLead(r.totalFormatted ?? ""),
+        "checkout",
+        {
+          harnessExtraChoices: [
+            {
+              label: COMMERCE_VISITOR_LABEL.confirmPriceButton,
+              message: DESK_CMD_CONFIRM_PRICE,
+            },
+          ],
+        },
+      );
+    case "link_ready":
+      return nativeTurn(
+        appendCheckoutPaymentDeskUi(
+          NATIVE_COMMERCE_LEAD.checkoutLink,
+          r.checkoutUrl,
+        ),
+        "checkout",
+        { checkoutUrl: r.checkoutUrl },
+      );
+    case "blocked":
+      return checkoutFailureNativeTurn({ code: r.blocker }, svc.getCart().currency);
   }
-  if (!svc.hasBuyerConsent()) {
-    return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
-  }
-  if (!svc.getCheckoutFulfillment()) {
-    return promptFulfillmentMode();
-  }
-  return runCheckout(svc, { turnstileToken, ...checkoutOpts });
 }
 
 async function applyFulfillmentModeAndCheckout(args: {
   svc: CommerceService;
+  getMeta: (key: string) => string | null;
   setMeta: (key: string, value: string) => void;
   mode: "pickup" | "delivery";
   turnstileToken?: string;
 }): Promise<NativeCommerceTurnResult> {
-  const { svc, setMeta, mode, turnstileToken } = args;
+  const { svc, getMeta, setMeta, mode, turnstileToken } = args;
   const buyer = svc.getBuyer();
   if (!buyer) {
-    return continueTowardCheckout({ svc, setMeta, turnstileToken });
+    return continueTowardCheckout({
+      svc,
+      getMeta,
+      setMeta,
+      turnstileToken,
+    });
   }
   if (mode === "delivery" && !buyer.address?.trim()) {
     setMeta(
@@ -390,7 +441,12 @@ async function applyFulfillmentModeAndCheckout(args: {
   if (!svc.hasBuyerConsent()) {
     return nativeTurn(buildBuyerConsentLead(), "buyer_consent");
   }
-  return runCheckout(svc, { turnstileToken });
+  return continueTowardCheckout({
+    svc,
+    getMeta,
+    setMeta,
+    turnstileToken,
+  });
 }
 
 export async function tryNativeCommerceTurn(args: {
@@ -402,46 +458,70 @@ export async function tryNativeCommerceTurn(args: {
   svc: CommerceService;
   fetchLinkedStoreCart?: () => Promise<CommerceCart | null>;
   turnstileToken?: string;
+  agentDrivenWizard?: boolean;
+  agentFlowTools?: boolean;
 }): Promise<NativeCommerceTurnResult | null> {
-  const { db, orgId, text, getMeta, setMeta, svc, fetchLinkedStoreCart, turnstileToken } =
-    args;
+  const {
+    db,
+    orgId,
+    text,
+    getMeta,
+    setMeta,
+    svc,
+    fetchLinkedStoreCart,
+    turnstileToken,
+    agentDrivenWizard,
+    agentFlowTools,
+  } = args;
   const trimmed = text.trim();
   if (!trimmed) return null;
+
+  const deskCmd = parseInternalDeskCommand(trimmed);
+  if (
+    agentFlowTools &&
+    deskCmd &&
+    (deskCmd.kind === "consent" ||
+      deskCmd.kind === "fulfillment_pickup" ||
+      deskCmd.kind === "fulfillment_delivery" ||
+      deskCmd.kind === "confirm_price" ||
+      deskCmd.kind === "pay")
+  ) {
+    return null;
+  }
 
   const clearUx = () => setMeta(META_COMMERCE_UX, "");
   const ux = parseUx(getMeta(META_COMMERCE_UX));
 
-  const deskCmd = parseInternalDeskCommand(trimmed);
+  const payArgs = {
+    svc,
+    getMeta,
+    setMeta,
+    turnstileToken,
+  };
 
   if (deskCmd?.kind === "consent") {
     await svc.recordBuyerConsentAsync();
-    return continueTowardCheckout({ svc, setMeta, turnstileToken });
+    return continueTowardCheckout(payArgs);
   }
 
   if (deskCmd?.kind === "fulfillment_pickup") {
     return applyFulfillmentModeAndCheckout({
-      svc,
-      setMeta,
+      ...payArgs,
       mode: "pickup",
-      turnstileToken,
     });
   }
 
   if (deskCmd?.kind === "fulfillment_delivery") {
     return applyFulfillmentModeAndCheckout({
-      svc,
-      setMeta,
+      ...payArgs,
       mode: "delivery",
-      turnstileToken,
     });
   }
 
   if (deskCmd?.kind === "confirm_price") {
     await ensureCheckoutCartFromLinked(svc, getMeta, fetchLinkedStoreCart);
     return continueTowardCheckout({
-      svc,
-      setMeta,
-      turnstileToken,
+      ...payArgs,
       checkoutOpts: {
         confirmPriceChange: true,
         confirmCartChange: true,
@@ -523,6 +603,7 @@ export async function tryNativeCommerceTurn(args: {
     const field = ux.field;
     const checked = validateCommerceBuyerField(String(field), trimmed);
     if (!checked.ok) {
+      if (agentDrivenWizard) return null;
       return nativeTurn(checked.message, "buyer_field");
     }
     const buyer: CommerceBuyer = {
@@ -530,15 +611,13 @@ export async function tryNativeCommerceTurn(args: {
       type: "natural_person",
       [field]: checked.value,
     };
-    await svc.persistBuyer(buyer);
-    svc.clearCheckoutFulfillment();
-    const next = await nextBuyerField(svc, buyer);
-    if (next) {
-      setMeta(META_COMMERCE_UX, JSON.stringify({ mode: "buyer", field: next }));
-      return nativeTurn(buyerPrompt(next), "buyer_field");
-    }
-    clearUx();
-    return continueTowardCheckout({ svc, setMeta, turnstileToken });
+    return persistBuyerAndContinue({
+      svc,
+      setMeta,
+      clearUx,
+      payArgs,
+      buyer,
+    });
   }
 
   if (deskCmd?.kind === "menu") {
@@ -575,7 +654,7 @@ export async function tryNativeCommerceTurn(args: {
     if (!cart.lines.length) {
       return nativeTurn(NATIVE_COMMERCE_LEAD.payNeedItems, "cart_view");
     }
-    return continueTowardCheckout({ svc, setMeta, turnstileToken });
+    return continueTowardCheckout(payArgs);
   }
 
   if (deskCmd?.kind === "set_qty") {

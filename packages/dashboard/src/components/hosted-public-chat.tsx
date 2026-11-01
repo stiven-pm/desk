@@ -87,6 +87,7 @@ type PublicStreamDone = {
   phase?: string;
   checkoutUrl?: string;
   commerceCode?: string;
+  visitorUi?: { requiresTurnstile: boolean };
 };
 
 async function readPublicMessageStream(
@@ -119,10 +120,13 @@ async function readPublicMessageStream(
       const ev = JSON.parse(line) as {
         type: string;
         text?: string;
+        status?: string;
+        toolName?: string;
         assistantText?: string;
         phase?: string;
         checkoutUrl?: string;
         commerceCode?: string;
+        visitorUi?: { requiresTurnstile: boolean };
         error?: string;
       };
       if (ev.type === "start") hooks.onStart?.();
@@ -133,6 +137,7 @@ async function readPublicMessageStream(
           phase: ev.phase,
           checkoutUrl: ev.checkoutUrl,
           commerceCode: ev.commerceCode,
+          visitorUi: ev.visitorUi,
         };
       }
       if (ev.type === "error") {
@@ -178,6 +183,16 @@ function finalizeStreamingAssistant(
 const DESK_CHOICE_BTN =
   "rounded-full border border-[#d8dcde] px-3 py-1 text-xs hover:bg-[#f8f9f9]";
 
+function AssistantTypingDots() {
+  return (
+    <span className="inline-flex items-center gap-1 py-0.5" aria-hidden>
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#68737d] [animation-delay:0ms]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#68737d] [animation-delay:150ms]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#68737d] [animation-delay:300ms]" />
+    </span>
+  );
+}
+
 function storageKey(botId: string, kind: "visitor" | "conv"): string {
   return publicVisitorStorageKey(botId, kind, "chat");
 }
@@ -201,11 +216,13 @@ const DESK_ACTION_VERIFY_FAIL = "No pudimos validar esa acción";
 
 function AssistantBody({
   text,
+  streaming,
   onChoice,
   onOffer,
   onProduct,
 }: {
   text: string;
+  streaming?: boolean;
   onChoice: (message: string, label: string) => void;
   onOffer: (offer: {
     intent: "continue" | "pay" | "human";
@@ -215,10 +232,15 @@ function AssistantBody({
   onProduct: (message: string, label?: string) => void;
 }) {
   const parsed: ParsedAssistantUi = useMemo(() => parseAssistantUi(text), [text]);
+  const showTyping = streaming && !text.trim();
 
   return (
     <div className="space-y-2">
-      {parsed.prose ? <AssistantMarkdown text={parsed.prose} /> : null}
+      {showTyping ? (
+        <AssistantTypingDots />
+      ) : parsed.prose ? (
+        <AssistantMarkdown text={parsed.prose} />
+      ) : null}
       {parsed.blocks.map((block, i) => (
         <DeskBlock
           key={i}
@@ -870,46 +892,31 @@ export function HostedPublicChat({
     };
   }, [bootstrap.themeCssUrl]);
 
-  const turnstileSiteKey = bootstrap.turnstileSiteKey?.trim() || null;
-  const humanHeaderLabel = deskCommandDisplayLabel({ kind: "human" });
+  useEffect(() => {
+    if (embed) return;
+    const html = document.documentElement;
+    const body = document.body;
+    html.classList.add("h-full", "overflow-hidden");
+    body.classList.add("h-full", "overflow-hidden");
+    const vv = window.visualViewport;
+    const setKb = () => {
+      if (!vv) return;
+      const gap = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      html.style.setProperty("--chat-kb-gap", `${Math.round(gap)}px`);
+    };
+    vv?.addEventListener("resize", setKb);
+    vv?.addEventListener("scroll", setKb);
+    setKb();
+    return () => {
+      html.classList.remove("h-full", "overflow-hidden");
+      body.classList.remove("h-full", "overflow-hidden");
+      html.style.removeProperty("--chat-kb-gap");
+      vv?.removeEventListener("resize", setKb);
+      vv?.removeEventListener("scroll", setKb);
+    };
+  }, [embed]);
 
-  const requestHuman = useCallback(async () => {
-    if (busy || !ready) return;
-    if (phase === "needs_human" || phase === "human_active") return;
-    setBusy(true);
-    setError(null);
-    try {
-      const conversationId = await ensureSession();
-      const res = await fetch(
-        `${apiUrl}/v1/public/conversations/${conversationId}/request-human`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Api-Key": bootstrap.publishableKey,
-          },
-          body: "{}",
-        },
-      );
-      if (!res.ok) {
-        setError("No pudimos conectar con un asesor. Intenta de nuevo.");
-        return;
-      }
-      const data = (await res.json()) as { phase?: string };
-      setPhase(data.phase ?? "needs_human");
-    } catch {
-      setError("No pudimos conectar con un asesor. Intenta de nuevo.");
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    apiUrl,
-    bootstrap.publishableKey,
-    busy,
-    ensureSession,
-    phase,
-    ready,
-  ]);
+  const turnstileSiteKey = bootstrap.turnstileSiteKey?.trim() || null;
 
   useEffect(() => {
     if (!storeConversationId || !storeVisitorId || !ready) return;
@@ -986,7 +993,11 @@ export function HostedPublicChat({
             }
           }
         }
-        setMessages((m) => [...m, { role: "user", text: trimmed }]);
+        setMessages((m) => [
+          ...m,
+          { role: "user", text: trimmed },
+          { role: "assistant", text: "", streaming: true },
+        ]);
         writeChatLastActiveMs(bootstrap.botId);
         const res = await fetch(
           `${apiUrl}/v1/public/conversations/${conversationId}/messages`,
@@ -1011,6 +1022,7 @@ export function HostedPublicChat({
         let phase: string | undefined;
         let checkoutUrl: string | undefined;
         let code: string | undefined;
+        let requiresTurnstile = false;
 
         if (res.ok && ct.includes("ndjson")) {
           const stream = await readPublicMessageStream(res, {
@@ -1033,6 +1045,9 @@ export function HostedPublicChat({
           reply = stream.done.assistantText;
           phase = stream.done.phase;
           checkoutUrl = stream.done.checkoutUrl;
+          code = stream.done.commerceCode;
+          requiresTurnstile =
+            stream.done.visitorUi?.requiresTurnstile === true;
           finalizeStreamingAssistant(setMessages, reply);
         } else {
           const data = (await res.json()) as {
@@ -1042,6 +1057,7 @@ export function HostedPublicChat({
             error?: string;
             checkoutUrl?: string;
             code?: string;
+            visitorUi?: { requiresTurnstile: boolean };
           };
           if (!res.ok) {
             code = data.code ?? data.error ?? "message_failed";
@@ -1055,7 +1071,8 @@ export function HostedPublicChat({
           phase = data.phase;
           checkoutUrl = data.checkoutUrl;
           code = data.code;
-          setMessages((m) => [...m, { role: "assistant", text: reply }]);
+          requiresTurnstile = data.visitorUi?.requiresTurnstile === true;
+          finalizeStreamingAssistant(setMessages, reply);
         }
 
         if (checkoutUrl && !reply.includes("Ir a pagar")) {
@@ -1064,7 +1081,7 @@ export function HostedPublicChat({
           return;
         }
         if (
-          code === "turnstile_required" &&
+          requiresTurnstile &&
           turnstileSiteKey &&
           !turnstileToken
         ) {
@@ -1137,11 +1154,15 @@ export function HostedPublicChat({
           checkoutUrl?: string;
           code?: string;
           error?: string;
+          visitorUi?: { requiresTurnstile?: boolean };
         };
+        const needsTurnstile =
+          data.visitorUi?.requiresTurnstile === true ||
+          data.code === "turnstile_required";
         if (!res.ok) {
           if (
             offer.intent === "pay" &&
-            data.code === "turnstile_required" &&
+            needsTurnstile &&
             turnstileSiteKey &&
             !turnstileToken
           ) {
@@ -1159,7 +1180,7 @@ export function HostedPublicChat({
         }
         if (
           offer.intent === "pay" &&
-          data.code === "turnstile_required" &&
+          needsTurnstile &&
           turnstileSiteKey &&
           !turnstileToken
         ) {
@@ -1194,7 +1215,12 @@ export function HostedPublicChat({
 
   const shellClass = embed
     ? "flex h-full min-h-0 flex-col overflow-hidden bg-white"
-    : "mx-auto flex h-[100dvh] max-h-[100dvh] w-full max-w-lg flex-col overflow-hidden bg-white";
+    : "fixed inset-x-0 top-0 bottom-0 mx-auto flex w-full max-w-lg flex-col overflow-hidden bg-white sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2";
+
+  const footerPad = {
+    paddingBottom:
+      "calc(env(safe-area-inset-bottom, 0px) + var(--chat-kb-gap, 0px))",
+  } as const;
 
   if (error && !ready) {
     return (
@@ -1207,21 +1233,11 @@ export function HostedPublicChat({
   return (
     <div className={shellClass}>
       {!embed ? (
-        <header className="flex shrink-0 items-start justify-between gap-2 border-b border-[#d8dcde] px-4 py-3">
+        <header className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-2 border-b border-[#d8dcde] bg-white px-4 py-3">
           <h1 className="min-w-0 text-base font-semibold text-[#2f3941]">
             {bootstrap.orgName}
           </h1>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {phase !== "needs_human" && phase !== "human_active" ? (
-              <button
-                type="button"
-                onClick={() => void requestHuman()}
-                disabled={!ready || busy}
-                className="rounded-md border border-[#d8dcde] px-2.5 py-1 text-xs text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
-              >
-                {humanHeaderLabel}
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={startNewConversation}
@@ -1253,6 +1269,7 @@ export function HostedPublicChat({
               {m.role === "assistant" ? (
                 <AssistantBody
                   text={m.text}
+                  streaming={m.streaming}
                   onChoice={(msg, label) => {
                     if (isDeskActionToken(msg)) void sendText(label, msg);
                     else void sendText(msg);
@@ -1269,12 +1286,23 @@ export function HostedPublicChat({
             </div>
           ))
         )}
-        {busy ? (
-          <p className="text-xs text-[#68737d]">Escribiendo…</p>
+        {busy &&
+        !messages.some(
+          (m, i) =>
+            i === messages.length - 1 &&
+            m.role === "assistant" &&
+            m.streaming,
+        ) ? (
+          <div className="mr-auto w-fit rounded-lg border border-[#d8dcde] bg-white px-3 py-2">
+            <AssistantTypingDots />
+          </div>
         ) : null}
       </div>
 
-      <div className="shrink-0 border-t border-[#d8dcde] bg-white">
+      <div
+        className="shrink-0 border-t border-[#d8dcde] bg-white"
+        style={footerPad}
+      >
         {phase === "needs_human" || phase === "human_active" ? (
           <p className="px-4 py-2 text-xs text-[#68737d]">
             Un asesor de {bootstrap.orgName} revisará este chat pronto.
@@ -1293,16 +1321,6 @@ export function HostedPublicChat({
 
         {embed ? (
           <div className="flex items-center justify-end gap-2 px-3 pt-1">
-            {phase !== "needs_human" && phase !== "human_active" ? (
-              <button
-                type="button"
-                onClick={() => void requestHuman()}
-                disabled={!ready || busy}
-                className="rounded px-1 py-0.5 text-[11px] text-[#68737d] hover:bg-[#f8f9f9] disabled:opacity-50"
-              >
-                {humanHeaderLabel}
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={startNewConversation}

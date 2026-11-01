@@ -1,12 +1,9 @@
-import { isSmallTalkMessage } from "./integrations/tool-rank";
-
 import type { VisitorTurnIntent } from "@chatbot/domain";
 
 export type { VisitorTurnIntent };
 
 export function classifyVisitorTurn(text: string): VisitorTurnIntent {
-  const trimmed = text.trim();
-  if (!trimmed || isSmallTalkMessage(trimmed)) return "small_talk";
+  if (!text.trim()) return "small_talk";
   return "general";
 }
 

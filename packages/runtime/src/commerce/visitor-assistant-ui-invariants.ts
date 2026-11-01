@@ -1,6 +1,6 @@
 import { parseAssistantUi } from "@chatbot/chat-ui";
-import type { VisitorTurnKind } from "@chatbot/domain";
-import { DESK_CMD_HUMAN, VISITOR_TURN_KINDS_WITHOUT_ACTIONS } from "@chatbot/domain";
+import type { CheckoutFlow, VisitorTurnKind } from "@chatbot/domain";
+import { DESK_CMD_HUMAN, turnKindAllowsActions } from "@chatbot/domain";
 
 export type VisitorAssistantUiInvariantViolation = {
   code: string;
@@ -10,6 +10,7 @@ export type VisitorAssistantUiInvariantViolation = {
 export function checkVisitorAssistantUiInvariants(
   assistantText: string,
   turnKind?: VisitorTurnKind,
+  checkoutFlow?: CheckoutFlow,
 ): VisitorAssistantUiInvariantViolation[] {
   const violations: VisitorAssistantUiInvariantViolation[] = [];
   const { blocks } = parseAssistantUi(assistantText);
@@ -38,23 +39,24 @@ export function checkVisitorAssistantUiInvariants(
         detail: String(choiceBlock.items.length),
       });
     }
-    if (turnKind && VISITOR_TURN_KINDS_WITHOUT_ACTIONS.has(turnKind)) {
-      if (choiceBlock.items.length > 0) {
-        violations.push({
-          code: "unexpected_actions_for_turn_kind",
-          detail: turnKind,
-        });
-      }
+    if (
+      turnKind &&
+      !turnKindAllowsActions(turnKind, checkoutFlow) &&
+      choiceBlock.items.length > 0
+    ) {
+      violations.push({
+        code: "unexpected_actions_for_turn_kind",
+        detail: turnKind,
+      });
     }
     const humanInBody = choiceBlock.items.some(
       (i) => i.message.trim() === DESK_CMD_HUMAN,
     );
-    if (
-      humanInBody &&
-      turnKind &&
-      turnKind !== "agent_struggling" &&
-      turnKind !== "handoff"
-    ) {
+    const humanAllowed =
+      turnKind === "checkout" &&
+      checkoutFlow?.phase === "blocked" &&
+      checkoutFlow.attempts >= 2;
+    if (humanInBody && turnKind && !humanAllowed) {
       violations.push({ code: "human_not_allowed", detail: turnKind });
     }
   }

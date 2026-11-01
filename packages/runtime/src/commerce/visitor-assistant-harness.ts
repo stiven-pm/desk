@@ -1,15 +1,13 @@
-import type { ConversationPhase } from "@chatbot/domain";
+import type { CheckoutFlow, ConversationPhase } from "@chatbot/domain";
 import {
-  buildVisitorStateBarChoices,
   effectiveVisitorTurnKind,
   resolveVisitorActions,
   type VisitorStateBarChoice,
   type VisitorTurnKind,
 } from "@chatbot/domain";
 import {
-  assistantResponseHasChoices,
-  assistantResponseHasProductCatalog,
   consolidateDeskUiFences,
+  stripModelDeskBlocksWhenCheckoutBusy,
 } from "./visitor-state-bar-ui";
 
 export type ApplyVisitorAssistantHarnessInput = {
@@ -22,6 +20,7 @@ export type ApplyVisitorAssistantHarnessInput = {
   extraChoices?: VisitorStateBarChoice[];
   harnessExtraChoices?: VisitorStateBarChoice[];
   struggleCount?: number;
+  checkoutFlow?: CheckoutFlow;
 };
 
 /** Misma composición de acciones que visitorAssistantWithHarness (sin firma desk-ui). */
@@ -32,32 +31,30 @@ export function applyVisitorAssistantActionHarness(
     ...(input.harnessExtraChoices ?? []),
     ...(input.extraChoices ?? []),
   ];
-  let turnKind = input.turnKind;
-  if (turnKind != null && input.struggleCount != null) {
+  let turnKind = input.turnKind ?? "faq";
+  if (input.turnKind != null && input.struggleCount != null) {
     turnKind = effectiveVisitorTurnKind({
-      turnKind,
+      turnKind: input.turnKind,
       struggleCount: input.struggleCount,
       phase: input.phase,
     });
   }
 
-  const items = turnKind
-    ? resolveVisitorActions({
-        turnKind,
-        phase: input.phase,
-        cartLineCount: input.cartLineCount,
-        hasPublishedCatalog: input.hasPublishedCatalog,
-        productId: input.actionProductId,
-        extraChoices: mergedExtra.length ? mergedExtra : undefined,
-      })
-    : buildVisitorStateBarChoices({
-        phase: input.phase,
-        cartLineCount: input.cartLineCount,
-        hasPublishedCatalog: input.hasPublishedCatalog,
-        responseHasChoices: assistantResponseHasChoices(input.text),
-        responseHasProductCatalog: assistantResponseHasProductCatalog(input.text),
-        extraChoices: mergedExtra.length ? mergedExtra : undefined,
-      });
+  const checkoutFlow = input.checkoutFlow;
+  let body = stripModelDeskBlocksWhenCheckoutBusy(
+    input.text,
+    checkoutFlow != null && checkoutFlow.phase !== "idle",
+  );
 
-  return consolidateDeskUiFences(input.text, items);
+  const items = resolveVisitorActions({
+    turnKind,
+    phase: input.phase,
+    cartLineCount: input.cartLineCount,
+    hasPublishedCatalog: input.hasPublishedCatalog,
+    productId: input.actionProductId,
+    extraChoices: mergedExtra.length ? mergedExtra : undefined,
+    checkoutFlow,
+  });
+
+  return consolidateDeskUiFences(body, items);
 }

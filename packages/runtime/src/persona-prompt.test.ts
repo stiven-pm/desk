@@ -1,23 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { buildDeskSystemPrompt } from "./persona-prompt";
+import { COMMERCE_TOOL } from "@chatbot/domain";
 
 describe("buildDeskSystemPrompt", () => {
-  it("distingue precio informativo vs carrito", () => {
+  it("includes commerce search and English behavior layer", () => {
     const prompt = buildDeskSystemPrompt({
-      companyInstructions: "Vendemos ropa.",
+      companyInstructions: "We sell clothes.",
       hasCommerce: true,
     });
-    expect(prompt).toContain("Grafo de venta");
-    expect(prompt).toContain("uses cifras del contexto documental");
-    expect(prompt).toContain("No inventes");
-    expect(prompt).toContain("priceCents");
+    expect(prompt).toContain(COMMERCE_TOOL.searchProducts);
+    expect(prompt).not.toContain("__desk:");
+    expect(prompt).not.toContain("Grafo de venta");
+    expect(prompt).toContain("Do not invent");
   });
 
-  it("menciona herramientas de catálogo cuando hasTools", () => {
+  it("mentions integrations code mode when enabled", () => {
     const prompt = buildDeskSystemPrompt({
       companyInstructions: "",
       hasTools: true,
+      integrationCodeMode: true,
     });
-    expect(prompt).toContain("Herramientas conectadas");
+    expect(prompt).toContain("desk_codemode");
+  });
+
+  it("mentions legacy integration meta tools when code mode off", () => {
+    const prompt = buildDeskSystemPrompt({
+      companyInstructions: "",
+      hasTools: true,
+      integrationCodeMode: false,
+    });
+    expect(prompt).toContain("desk_search_integrations");
+  });
+
+  it("does not treat phone as default order lookup", () => {
+    const prompt = buildDeskSystemPrompt({
+      companyInstructions: "",
+      hasCommerce: true,
+    });
+    expect(prompt).toContain("Do not lead with phone");
   });
 });
