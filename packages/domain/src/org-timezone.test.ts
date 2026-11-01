@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   bucketConversationsByLocalDay,
+  formatOrgDateTime,
   localDayKeyFromUtcStorage,
   parseD1UtcTimestamp,
+  utcD1RangeForOrgLocalDay,
 } from "./org-timezone";
 
 describe("org-timezone", () => {
@@ -30,5 +32,21 @@ describe("org-timezone", () => {
     expect(out).toEqual([
       { day: "2026-10-30", conversations: 3 },
     ]);
+  });
+
+  it("formatOrgDateTime muestra hora local de la org", () => {
+    const out = formatOrgDateTime("2026-11-01 20:53:05", "America/Bogota");
+    expect(out).toContain("3:53:05");
+    expect(out.toLowerCase()).toMatch(/p\.\s*m\./);
+    expect(out.startsWith("1/11/")).toBe(true);
+  });
+
+  it("utcD1RangeForOrgLocalDay acota el día en Bogotá", () => {
+    const { from, to } = utcD1RangeForOrgLocalDay(
+      "2026-11-01",
+      "America/Bogota",
+    );
+    expect(from).toBe("2026-11-01 05:00:00");
+    expect(to).toBe("2026-11-02 04:59:59");
   });
 });

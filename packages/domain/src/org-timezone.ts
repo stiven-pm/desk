@@ -88,3 +88,64 @@ export function resolveOrgTimezone(raw: string | null | undefined): string {
     return DEFAULT_ORG_TIMEZONE;
   }
 }
+
+/** SQLite/D1 `datetime('now')` shape in UTC (`YYYY-MM-DD HH:MM:SS`). */
+export function formatUtcForD1Storage(d: Date): string {
+  return d.toISOString().slice(0, 19).replace("T", " ");
+}
+
+function findLocalDayStartUtcMs(localDayYmd: string, timeZone: string): number {
+  const [y, m, d] = localDayYmd.split("-").map((x) => Number.parseInt(x, 10));
+  if (!y || !m || !d) return Number.NaN;
+  let lo = Date.UTC(y, m - 1, d) - 36 * 3600 * 1000;
+  let hi = Date.UTC(y, m - 1, d) + 36 * 3600 * 1000;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const key = localDayKeyFromUtcStorage(new Date(mid), timeZone);
+    if (key < localDayYmd) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Rango UTC en formato D1 para un día calendario en la zona de la org. */
+export function utcD1RangeForOrgLocalDay(
+  localDayYmd: string,
+  timeZone: string,
+): { from: string; to: string } {
+  const tz = resolveOrgTimezone(timeZone);
+  const startMs = findLocalDayStartUtcMs(localDayYmd, tz);
+  const nextDay = localDayKeyFromUtcStorage(
+    new Date(startMs + 25 * 3600 * 1000),
+    tz,
+  );
+  const endMs = findLocalDayStartUtcMs(nextDay, tz) - 1000;
+  return {
+    from: formatUtcForD1Storage(new Date(startMs)),
+    to: formatUtcForD1Storage(new Date(endMs)),
+  };
+}
+
+export function utcD1RangeForOrgLocalToday(timeZone: string): {
+  from: string;
+  to: string;
+} {
+  const tz = resolveOrgTimezone(timeZone);
+  const today = localDayKeyFromUtcStorage(new Date(), tz);
+  return utcD1RangeForOrgLocalDay(today, tz);
+}
+
+/** Fecha/hora para UI admin (D1 UTC → zona de la org). */
+export function formatOrgDateTime(
+  raw: string | Date,
+  timeZone: string,
+): string {
+  const d = raw instanceof Date ? raw : parseD1UtcTimestamp(raw);
+  if (Number.isNaN(d.getTime())) return raw instanceof Date ? "" : String(raw);
+  const tz = resolveOrgTimezone(timeZone);
+  return new Intl.DateTimeFormat("es-CO", {
+    timeZone: tz,
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(d);
+}

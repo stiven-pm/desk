@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { CommerceBuyer } from "@chatbot/domain";
+import {
+  DEFAULT_ORG_TIMEZONE,
+  formatOrgDateTime,
+  utcD1RangeForOrgLocalDay,
+  utcD1RangeForOrgLocalToday,
+} from "@chatbot/domain";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PromptDialog } from "@/components/prompt-dialog";
 
@@ -68,18 +74,6 @@ function formatBuyerLines(buyer: CommerceBuyer | null): string[] {
   return lines;
 }
 
-function startOfTodayLocal(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-function endOfTodayLocal(): string {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d.toISOString();
-}
-
 function formatLines(linesJson: string | null): string {
   if (!linesJson) return "";
   try {
@@ -106,6 +100,7 @@ function formatOrderStatus(status: string): string {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [orgTimezone, setOrgTimezone] = useState(DEFAULT_ORG_TIMEZONE);
   const [todayOnly, setTodayOnly] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -125,17 +120,22 @@ export default function OrdersPage() {
     params.set("sort", sort);
     if (deliveryFilter !== "all") params.set("mode", deliveryFilter);
     if (todayOnly) {
-      params.set("from", startOfTodayLocal());
-      params.set("to", endOfTodayLocal());
+      const { from, to } = utcD1RangeForOrgLocalToday(orgTimezone);
+      params.set("from", from);
+      params.set("to", to);
     } else {
-      if (fromDate) params.set("from", new Date(`${fromDate}T00:00:00`).toISOString());
-      if (toDate) params.set("to", new Date(`${toDate}T23:59:59`).toISOString());
+      if (fromDate) {
+        params.set("from", utcD1RangeForOrgLocalDay(fromDate, orgTimezone).from);
+      }
+      if (toDate) {
+        params.set("to", utcD1RangeForOrgLocalDay(toDate, orgTimezone).to);
+      }
     }
     const d = await api<{ orders: Order[] }>(
       `/v1/admin/sales-orders?${params.toString()}`,
     );
     setOrders(d.orders);
-  }, [sort, deliveryFilter, todayOnly, fromDate, toDate]);
+  }, [sort, deliveryFilter, todayOnly, fromDate, toDate, orgTimezone]);
 
   const patchOrder = useCallback(
     async (
@@ -158,6 +158,14 @@ export default function OrdersPage() {
     },
     [load],
   );
+
+  useEffect(() => {
+    void api<{ org?: { timezone?: string } }>("/v1/admin/account")
+      .then((d) => {
+        setOrgTimezone(d.org?.timezone?.trim() || DEFAULT_ORG_TIMEZONE);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     void load().catch((e) =>
@@ -295,7 +303,7 @@ export default function OrdersPage() {
                   {(o.subtotal_cents / 100).toLocaleString("es-CO")} {o.currency}
                   <span className="font-normal text-[var(--muted)]">
                     {" "}
-                    · {new Date(o.created_at).toLocaleString("es-CO")}
+                    · {formatOrgDateTime(o.created_at, orgTimezone)}
                   </span>
                 </p>
               </button>
@@ -330,7 +338,7 @@ export default function OrdersPage() {
             </p>
             <p className="text-xs text-[var(--muted)]">
               {formatOrderStatus(selected.status)} ·{" "}
-              {new Date(selected.created_at).toLocaleString("es-CO")}
+              {formatOrgDateTime(selected.created_at, orgTimezone)}
             </p>
             {formatLines(selected.lines_json) ? (
               <p className="mt-3 text-xs text-[var(--muted)]">
@@ -396,7 +404,7 @@ export default function OrdersPage() {
                 <ul className="mt-4 space-y-1 text-xs text-[var(--muted)]">
                   {ops.map((e, i) => (
                     <li key={`${e.at}-${i}`}>
-                      {new Date(e.at).toLocaleString("es-CO")} · {e.type}
+                      {formatOrgDateTime(e.at, orgTimezone)} · {e.type}
                       {e.text ? `: ${e.text}` : ""}
                     </li>
                   ))}
