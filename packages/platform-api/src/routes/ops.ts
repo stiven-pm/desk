@@ -8,6 +8,15 @@ import {
   fetchOpsOrgMetrics,
   fetchOpsPlatformOverview,
 } from "../lib/ops-economics";
+import {
+  fetchOpsHealthOverview,
+  fetchOpsOrgHealth,
+  fetchOpsSignalEvents,
+} from "../lib/ops-health";
+import {
+  getCloudflareBillingForOps,
+  syncCloudflareBillingCache,
+} from "../lib/cloudflare-billing";
 import { creditWallet } from "../lib/wallet";
 import { periodStartIso, randomId } from "../lib/http";
 import {
@@ -39,6 +48,69 @@ export function registerOpsRoutes(app: Hono<AppEnv>): void {
   });
 
   app.get("/v1/ops/economics/overview", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    const overview = await fetchOpsHealthOverview(c.env);
+    return json({
+      ...overview.economics,
+      periodStart: periodStartIso(),
+      walletPacks: WALLET_CREDIT_PACKS,
+      turnQuality7d: overview.turnQuality7d,
+      turnQuality24h: overview.turnQuality24h,
+      signals24h: overview.signals24h,
+      signals7d: overview.signals7d,
+      costBands: overview.costBands,
+    });
+  });
+
+  app.get("/v1/ops/health/overview", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    return json(await fetchOpsHealthOverview(c.env));
+  });
+
+  app.get("/v1/ops/health/events", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    const hours = Number(c.req.query("hours") ?? 24);
+    const severity = c.req.query("severity") as
+      | "error"
+      | "warn"
+      | "info"
+      | undefined;
+    const category = c.req.query("category") ?? undefined;
+    const orgId = c.req.query("orgId") ?? undefined;
+    const events = await fetchOpsSignalEvents(c.env, {
+      hours: Number.isFinite(hours) ? hours : 24,
+      severity,
+      category,
+      orgId,
+    });
+    return json({ events });
+  });
+
+  app.get("/v1/ops/orgs/:orgId/health", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    return json(await fetchOpsOrgHealth(c.env, c.req.param("orgId")));
+  });
+
+  app.get("/v1/ops/billing/cloudflare", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    const refresh = c.req.query("refresh") === "1";
+    const billing = await getCloudflareBillingForOps(c.env, { refresh });
+    return json({ billing });
+  });
+
+  app.post("/v1/ops/billing/cloudflare/sync", async (c) => {
+    const auth = await requireOps(c.req.raw, c.env);
+    if ("response" in auth) return auth.response;
+    const billing = await syncCloudflareBillingCache(c.env);
+    return json({ billing });
+  });
+
+  app.get("/v1/ops/economics/overview-legacy", async (c) => {
     const auth = await requireOps(c.req.raw, c.env);
     if ("response" in auth) return auth.response;
     const overview = await fetchOpsPlatformOverview(c.env);

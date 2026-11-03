@@ -18,7 +18,8 @@
     "./harness/flags": "./src/harness/flags.ts",
     "./harness/setup-output": "./src/harness/setup-output.ts",
     "./commerce/stock-reservations": "./src/commerce/stock-reservations.ts",
-    "./commerce/public-ref-db-lookup": "./src/commerce/public-ref-db-lookup.ts"
+    "./commerce/public-ref-db-lookup": "./src/commerce/public-ref-db-lookup.ts",
+    "./ops-telemetry": "./src/ops-telemetry.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

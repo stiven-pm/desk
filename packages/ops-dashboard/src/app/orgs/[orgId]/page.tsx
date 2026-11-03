@@ -40,6 +40,24 @@ type OrgIntegration = {
   definition: { id: string; slug: string; name: string; kind: string };
 };
 
+type OrgHealthResponse = {
+  turn7d: {
+    sampleSize: number;
+    creditsPerMessage: { p50: number | null; p95: number | null; mean: number | null };
+    durationMs: { p50: number | null; p95: number | null; mean: number | null };
+    degradedRatePct: number | null;
+  };
+  recentEvents: Array<{
+    id: string;
+    created_at: string;
+    severity: string;
+    category: string;
+    code: string;
+    summary: string;
+    request_id: string | null;
+  }>;
+};
+
 type Flash = { type: "ok" | "err"; text: string } | null;
 
 const STATUS_LABEL: Record<string, string> = {
@@ -68,6 +86,7 @@ export default function OpsOrgDetailPage() {
   const [timezone, setTimezone] = useState("America/Bogota");
   const [tzBusy, setTzBusy] = useState(false);
   const [tzFlash, setTzFlash] = useState<Flash>(null);
+  const [orgHealth, setOrgHealth] = useState<OrgHealthResponse | null>(null);
 
   const loadIntegrations = useCallback(async () => {
     const d = await opsApi<{ integrations: OrgIntegration[] }>(
@@ -95,6 +114,9 @@ export default function OpsOrgDetailPage() {
       .then((d) => setDefinitions(d.definitions))
       .catch(() => undefined);
     void loadIntegrations().catch(() => undefined);
+    opsApi<OrgHealthResponse>(`/v1/ops/orgs/${orgId}/health`)
+      .then(setOrgHealth)
+      .catch(() => setOrgHealth(null));
   }, [orgId, loadIntegrations]);
 
   async function assignIntegration() {
@@ -247,6 +269,50 @@ export default function OpsOrgDetailPage() {
             value={`$${o.gross_margin_usd.toFixed(0)} (${o.gross_margin_pct}%)`}
           />
         </div>
+
+        {orgHealth ? (
+          <section className="mt-10 rounded border border-[var(--ops-border)] bg-white p-4">
+            <h2 className="font-medium text-sm">Salud (7 días)</h2>
+            <p className="mt-1 text-xs text-[var(--ops-muted)]">
+              Muestras turno: {orgHealth.turn7d.sampleSize}
+              {orgHealth.turn7d.degradedRatePct != null
+                ? ` · Degradados ${orgHealth.turn7d.degradedRatePct}%`
+                : ""}
+            </p>
+            <ul className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              <li>
+                Créditos/msg p95:{" "}
+                <strong>{orgHealth.turn7d.creditsPerMessage.p95 ?? "—"}</strong>
+              </li>
+              <li>
+                Latencia p95:{" "}
+                <strong>
+                  {orgHealth.turn7d.durationMs.p95 != null
+                    ? `${Math.round(orgHealth.turn7d.durationMs.p95)} ms`
+                    : "—"}
+                </strong>
+              </li>
+            </ul>
+            {orgHealth.recentEvents.length > 0 ? (
+              <ul className="mt-4 max-h-48 divide-y divide-[var(--ops-border)] overflow-y-auto text-xs">
+                {orgHealth.recentEvents.map((ev) => (
+                  <li key={ev.id} className="py-2">
+                    <span className="text-[var(--ops-muted)]">{ev.created_at}</span>{" "}
+                    <span className="font-mono">
+                      {ev.severity}/{ev.category}/{ev.code}
+                    </span>
+                    <p>{ev.summary}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-xs text-[var(--ops-muted)]">Sin señales recientes.</p>
+            )}
+            <Link href="/health" className="mt-3 inline-block text-xs underline">
+              Ver salud global
+            </Link>
+          </section>
+        ) : null}
 
         <section className="mt-10 rounded border border-[var(--ops-border)] bg-white p-4">
           <h2 className="font-medium text-sm">Integraciones Desk (cliente)</h2>

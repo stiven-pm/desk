@@ -12,7 +12,7 @@
 No rellenes manualmente `D1_DATABASE_ID*` en `.env` si el prepare puede correr: crea/resuelve D1/KV.  
 `desk:secrets:test` **no** crea D1/KV ni arregla auth de Wrangler; solo sube JWT/Creem al Worker.
 
-**Token Cloudflare:** `CF_API_TOKEN` en `.env` debe incluir **D1 Edit** y **Workers KV Storage Edit** (tokens solo-D1 crean la base pero fallan en KV).
+**Token Cloudflare:** `CF_D1_ADMIN_TOKEN` / `CF_API_TOKEN` en `.env.*` — **D1 Edit** y **Workers KV Storage Edit** (provision/migraciones). `desk:secrets:*` usa **login de Wrangler** (OAuth), no `CF_D1_ADMIN_TOKEN`. Con `--env test`, Wrangler cargaba `.env.test` y volvía a usar `CF_API_TOKEN` aunque hicieras login; el script pasa `--env-file /dev/null` como en deploy. Si falla “No access”, `npx wrangler login`.
 
 ## Primera vez (test)
 

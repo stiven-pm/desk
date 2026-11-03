@@ -86,13 +86,13 @@ Sin `AGENT_FLOW_TOOLS`, el nativo sigue manejando clicks y las interrupciones fi
 
 ### Dónde medir (hoy)
 
-| Qué | Ops (`/metrics`, `/orgs/:id`) | Panel tenant (`/v1/admin/analytics`) | Worker logs / tail |
-|-----|--------------------------------|--------------------------------------|---------------------|
-| MRR, créditos, mensajes mes, COGS | Sí (global) | Uso del plan | — |
+| Qué | Ops (`/metrics`, `/health`, `/orgs/:id`) | Panel tenant | Worker logs |
+|-----|------------------------------------------|--------------|-------------|
+| MRR, créditos, mensajes mes, COGS | Sí | Uso del plan | — |
 | Margen / wallet por org | Sí (por org) | — | — |
-| Conversaciones, handoffs, checkout | — | Sí (por org) | — |
-| Escalera LLM, vacíos, parser, intentos | **No** (aún) | **No** | Sí — tags arriba |
-| Replay multi-modelo | — | — | Local: `scripts/replay-llm.mjs` + payload de `DESK_LLM_DEBUG` |
+| p50/p95 créditos/msg y latencia turno | **Salud** + org | — | — |
+| Errores LLM, tools, API, usage | **Salud** (D1) | — | Tail opcional |
+| Conversaciones, handoffs, checkout | — | Sí | — |
 
 **Regla parser:** `count(desk_tool_parsed_from_text) / count(turnos con tools)` &lt; 2 % una semana → candidato a quitar parser; si no, mantener.
 

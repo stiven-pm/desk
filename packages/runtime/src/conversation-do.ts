@@ -23,6 +23,7 @@ import {
   type VisitorCheckoutUi,
   type VisitorStateBarChoice,
   type VisitorTurnKind,
+  RAG_METERING_CREDITS_PER_MESSAGE,
 } from "@chatbot/domain";
 import {
   RAG_CHUNK_MAX_CHARS,
@@ -30,6 +31,7 @@ import {
   RAG_TOP_K,
 } from "@chatbot/domain";
 import { assertOrgUsage, recordOrgUsage } from "./do-usage";
+import { recordOpsSignal, recordOpsVisitorTurn } from "./ops-telemetry";
 import {
   embeddingDimensions,
   llmChatCompletion,
@@ -157,6 +159,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
   systemPrompt = "";
   hostComponents: string[] = [];
   private ragCache: { q: string; ctx: string; at: number } | null = null;
+  private visitorTurnStartedAt = 0;
 
   constructor(ctx: DurableObjectState, env: ConversationEnv) {
     super(ctx, env);
@@ -387,6 +390,35 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     return { ...result, visitorUi: this.visitorCheckoutUi() };
   }
 
+  private async finishVisitorTurn<
+    T extends {
+      creditsEstimate: number;
+      turnKind?: VisitorTurnKind;
+      recordStruggle?: boolean;
+      agentDegraded?: boolean;
+      llmFailureReason?: string;
+    },
+  >(result: T): Promise<T & { visitorUi: CheckoutVisitorUi }> {
+    await this.recordMessageUsage(result.creditsEstimate);
+    const durationMs = this.visitorTurnStartedAt
+      ? Math.max(0, Date.now() - this.visitorTurnStartedAt)
+      : 0;
+    this.visitorTurnStartedAt = 0;
+    const metered =
+      Math.max(1, result.creditsEstimate) + RAG_METERING_CREDITS_PER_MESSAGE;
+    await recordOpsVisitorTurn(this.env.DB, {
+      orgId: this.orgId,
+      botId: this.botId,
+      durationMs,
+      creditsMetered: metered,
+      degraded: Boolean(result.agentDegraded),
+      errorCode:
+        result.llmFailureReason ??
+        (result.recordStruggle ? "llm_struggle" : null),
+    });
+    return this.withVisitorUi(result);
+  }
+
   private async visitorAssistantWithHarness(
     text: string,
     opts?: {
@@ -448,7 +480,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         await this.appendMessage("user", displayText.slice(0, 200));
         const reply = "No pudimos validar esa acción. Usa los botones del chat.";
         await this.appendMessage("assistant", reply);
-        return this.withVisitorUi({
+        return await this.finishVisitorTurn({
           assistantText: reply,
           phase: this.phase,
           creditsEstimate: 0,
@@ -470,7 +502,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           const reply = "Esa oferta ya no está activa. Escríbeme si necesitas algo.";
           await this.appendMessage("user", displayText);
           await this.appendMessage("assistant", reply);
-          return this.withVisitorUi({
+          return await this.finishVisitorTurn({
           assistantText: reply,
           phase: this.phase,
           creditsEstimate: 0,
@@ -486,7 +518,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           await this.appendMessage("assistant", assistantText);
           this.setMeta("phase", this.phase);
           this.touchActivity();
-          return this.withVisitorUi({
+          return await this.finishVisitorTurn({
             assistantText,
             phase: this.phase,
             creditsEstimate: 0,
@@ -506,7 +538,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
           await this.appendMessage("assistant", assistantText);
           this.setMeta("phase", this.phase);
           this.touchActivity();
-          return this.withVisitorUi({
+          return await this.finishVisitorTurn({
             assistantText,
             phase: this.phase,
             creditsEstimate: 0,
@@ -532,7 +564,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         await this.appendMessage("user", displayText.slice(0, 120));
         const reply = "Usa los botones del chat para continuar.";
         await this.appendMessage("assistant", reply);
-        return this.withVisitorUi({
+        return await this.finishVisitorTurn({
           assistantText: reply,
           phase: this.phase,
           creditsEstimate: 0,
@@ -542,6 +574,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
 
     await this.appendMessage("user", displayText);
     this.touchActivity();
+    this.visitorTurnStartedAt = Date.now();
 
     const traceScope = {
       orgId: this.orgId,
@@ -569,7 +602,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       const reply = HANDOFF_REPLY;
       await this.appendMessage("assistant", reply);
       this.touchActivity();
-      return this.withVisitorUi({
+      return await this.finishVisitorTurn({
         assistantText: reply,
         phase: this.phase,
         creditsEstimate: 0,
@@ -591,7 +624,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       await this.appendMessage("assistant", assistantText);
       this.setMeta("phase", this.phase);
       this.touchActivity();
-      return this.withVisitorUi({
+      return await this.finishVisitorTurn({
         assistantText,
         phase: this.phase,
         creditsEstimate: 0,
@@ -613,7 +646,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       await this.appendMessage("assistant", assistantText);
       this.setMeta("phase", this.phase);
       this.touchActivity();
-      return this.withVisitorUi({
+      return await this.finishVisitorTurn({
         assistantText,
         phase: this.phase,
         creditsEstimate: 0,
@@ -693,7 +726,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         await this.appendMessage("assistant", assistantText);
         this.setMeta("phase", this.phase);
         this.touchActivity();
-        return this.withVisitorUi({
+        return await this.finishVisitorTurn({
           assistantText,
           phase: this.phase,
           creditsEstimate: 0,
@@ -710,7 +743,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
       await this.appendMessage("assistant", reply);
       this.setMeta("phase", this.phase);
       await this.ensureHumanQueueRow();
-      return this.withVisitorUi({
+      return await this.finishVisitorTurn({
         assistantText: reply,
         phase: this.phase,
         creditsEstimate: 0,
@@ -786,7 +819,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     await this.compactVisitorHistoryIfNeeded();
     this.setMeta("phase", this.phase);
     this.touchActivity();
-    return this.withVisitorUi({
+    return await this.finishVisitorTurn({
       assistantText,
       phase: this.phase,
       creditsEstimate: reply.creditsEstimate,
@@ -974,6 +1007,15 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
 
       const usageError = await this.guardUsage();
       if (usageError) {
+        void recordOpsSignal(this.env.DB, {
+          severity: "warn",
+          category: "usage",
+          code: usageError,
+          summary: `Tope de uso: ${usageError}`,
+          orgId: this.orgId,
+          botId: this.botId,
+          conversationId: this.getMeta("conversation_id"),
+        });
         return Response.json(
           { error: usageError, assistantText: "", phase: this.phase, creditsEstimate: 0 },
           { status: 429 },
@@ -1187,8 +1229,6 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         // Misma ruta que POST /message: el stream por WS rompía respuestas con Workers AI.
         const result = await this.handleUserMessage(parsed.text);
 
-        await this.recordMessageUsage(result.creditsEstimate);
-
         ws.send(
           JSON.stringify({
             type: "assistant_message",
@@ -1373,6 +1413,8 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     turnKind?: VisitorTurnKind;
     recordStruggle?: boolean;
     escalateToHuman?: boolean;
+    agentDegraded?: boolean;
+    llmFailureReason?: string;
   }> {
     let orgHasCommerce = Boolean(this.env.DB && this.botId);
     if (orgHasCommerce && this.env.DB) {
@@ -1491,6 +1533,7 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
 
     if (this.env.DB && this.botId && (hasHttpTools || attachCommerce)) {
       const agent = await runAgentWithTools(this.env, {
+        orgId: this.orgId,
         botId: this.botId,
         conversationId: this.getMeta("conversation_id") ?? undefined,
         system,
@@ -1531,6 +1574,8 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
         turnKind: agent.turnKind,
         recordStruggle: agent.recordStruggle,
         escalateToHuman: agent.escalateToHuman,
+        agentDegraded: agent.agentDegraded,
+        llmFailureReason: agent.llmFailureReason,
       };
     }
 

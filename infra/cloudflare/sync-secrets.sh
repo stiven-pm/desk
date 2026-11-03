@@ -10,6 +10,7 @@ SECRET_KEYS=(
   ENCRYPTION_KEY
   TURNSTILE_SECRET_KEY
   OPS_BOOTSTRAP_PASSWORD
+  CF_BILLING_API_TOKEN
   GOOGLE_OAUTH_CLIENT_SECRET
   HUBSPOT_OAUTH_CLIENT_SECRET
   SHOPIFY_OAUTH_CLIENT_SECRET
@@ -57,12 +58,16 @@ push_secrets() {
   local wrangler_env=()
   if [[ "$env_name" == "test" ]]; then
     wrangler_env=(--env test)
+  else
+    wrangler_env=(--env "")
   fi
-  # Production: top-level worker "desk-api" in wrangler.toml (no --env flag).
+  # Production: top-level worker "desk-api" in wrangler.toml.
   [[ -f "$env_file" ]] || { echo "Missing $env_file" >&2; return 1; }
   for key in "${SECRET_KEYS[@]}"; do
     if val="$(read_env_value "$env_file" "$key" 2>/dev/null)"; then
-      printf '%s' "$val" | npx wrangler secret put "$key" --config "$CFG" "${wrangler_env[@]}"
+      # Wrangler --env test carga .env.test y reinyecta CF_API_TOKEN (ignora OAuth).
+      printf '%s' "$val" | env -u CF_API_TOKEN -u CLOUDFLARE_API_TOKEN \
+        npx wrangler secret put "$key" --config "$CFG" "${wrangler_env[@]}" --env-file /dev/null
     fi
   done
 }

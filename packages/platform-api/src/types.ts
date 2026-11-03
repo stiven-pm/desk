@@ -86,6 +86,9 @@ export interface Env {
   DESK_CODEMODE?: {
     get(options: { props: { botId: string } }): import("@chatbot/runtime").DeskCodemodeRpc;
   };
+  CF_ACCOUNT_ID?: string;
+  /** API token with Account → Billing → Read (Billable Usage API). */
+  CF_BILLING_API_TOKEN?: string;
 }
 
 export interface ApiKeyAuth {

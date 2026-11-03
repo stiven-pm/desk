@@ -1,45 +1,76 @@
-/** Ejemplo ilustrativo de chat web Desk. */
+/** Ejemplo ilustrativo — mismos tokens que el chat web hosted (`hosted-public-chat`). */
+
+const CHOICE_BTN =
+  "inline-block rounded-full border border-[#d8dcde] px-3 py-1 text-xs text-[#2f3941]";
+
+const USER_BUBBLE =
+  "ml-auto max-w-[90%] w-fit rounded-lg bg-[#edf0f2] px-3 py-2 text-sm text-[#2f3941]";
+
+const ASSISTANT_BUBBLE =
+  "mr-auto max-w-[95%] w-fit rounded-lg border border-[#d8dcde] bg-white px-3 py-2 text-sm text-[#2f3941]";
+
 export function ChatPreview({ compact = false }: { compact?: boolean }) {
-  const text = compact ? "text-[13px]" : "text-[14px]";
   return (
     <div
-      className="relative mx-auto w-full max-w-sm overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] shadow-[0_6px_20px_rgba(17,27,33,0.08)]"
+      className="pointer-events-none mx-auto flex w-full max-w-sm select-none flex-col overflow-hidden rounded-2xl border border-[#d8dcde] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.15)]"
       aria-label="Ejemplo ilustrativo de chat web"
     >
-      <div className="flex items-center gap-2.5 border-b border-[var(--border)] bg-[var(--card)] px-3 py-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--muted-bg)] text-xs font-semibold">
-          TN
+      <header className="flex shrink-0 items-start justify-between gap-2 border-b border-[#d8dcde] bg-white px-4 py-3">
+        <h2 className="min-w-0 text-base font-semibold text-[#2f3941]">Snack Bar Norte</h2>
+        <span className="shrink-0 rounded-md border border-[#d8dcde] px-2.5 py-1 text-xs text-[#68737d]">
+          Empezar de nuevo
         </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">Tu negocio</p>
+      </header>
+
+      <div
+        className={`min-h-0 flex-1 space-y-3 overflow-hidden p-4 ${compact ? "max-h-[19rem]" : "max-h-[26rem]"}`}
+      >
+        <div className={ASSISTANT_BUBBLE}>
+          <p className="whitespace-pre-wrap">
+            {`¡Hola! Bienvenido a Snack Bar Norte 🙌\n¿Te muestro el menú o buscas algo en particular?`}
+          </p>
         </div>
-      </div>
-      <div className={`space-y-2 bg-[var(--muted-bg)]/40 p-3 leading-snug ${text}`}>
-        <div className="ml-auto w-fit max-w-[85%] rounded-lg rounded-tr-sm bg-[var(--primary)] px-2.5 py-1.5 text-[var(--primary-foreground)]">
-          Hola, ¿qué tienen disponible?
-        </div>
-        <div className="mr-auto w-fit max-w-[90%] rounded-lg rounded-tl-sm border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5">
-          Estos son algunos artículos del catálogo. Elige uno para armar el pedido.
-        </div>
-        <div className="mr-auto w-fit max-w-[90%] rounded-lg border border-[var(--border)] bg-[var(--card)] px-2.5 py-2">
-          <p className="text-[11px] font-medium text-[var(--muted)]">Productos</p>
-          <p className="mt-1 text-[12px]">Plan básico · $20.000</p>
-          <p className="text-[12px]">Plan estándar · $35.000</p>
+        <div className={USER_BUBBLE}>¿Qué venden?</div>
+        <div className={ASSISTANT_BUBBLE}>
+          <p className="whitespace-pre-wrap">
+            {`🍗 Costillas — 6 costillas con ensalada ($30.000)\n🍟 Snacks — 16 piezas con papitas ($20.000)`}
+          </p>
+          <p className="mt-2">¿Te llevo alguno al carrito?</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className={CHOICE_BTN}>Ver productos</span>
+          </div>
         </div>
         {!compact && (
           <>
-            <div className="ml-auto w-fit max-w-[85%] rounded-lg rounded-tr-sm bg-[var(--primary)] px-2.5 py-1.5 text-[var(--primary-foreground)]">
-              El plan básico, por favor
+            <div className={USER_BUBBLE}>Las costillas, por favor</div>
+            <div className={ASSISTANT_BUBBLE}>
+              <div className="space-y-1.5">
+                <div className="flex w-full items-baseline justify-between gap-2 rounded-md border border-[#d8dcde] px-3 py-2 text-left">
+                  <span className="min-w-0 font-medium">Costillas BBB</span>
+                  <span className="shrink-0 text-xs text-[#68737d]">$30.000</span>
+                </div>
+                <div className="flex w-full items-baseline justify-between gap-2 rounded-md border border-[#d8dcde] px-3 py-2 text-left">
+                  <span className="min-w-0 font-medium">Snacks de pollo</span>
+                  <span className="shrink-0 text-xs text-[#68737d]">$20.000</span>
+                </div>
+              </div>
             </div>
-            <div className="mr-auto w-fit max-w-[90%] rounded-lg rounded-tl-sm border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5">
-              Listo. Te envío el enlace para pagar. Si necesitas un asesor, escribe
-              &quot;hablar con alguien&quot;.
+            <div className={ASSISTANT_BUBBLE}>
+              Listo. Te envío el enlace para pagar cuando confirmes.
             </div>
           </>
         )}
-        <p className="pt-1 text-center text-[10px] text-[var(--muted)]">
-          Ejemplo ilustrativo · chat web
-        </p>
+      </div>
+
+      <div className="shrink-0 border-t border-[#d8dcde] bg-white">
+        <div className="flex gap-2 p-3 pt-2">
+          <div className="min-w-0 flex-1 rounded-md border border-[#d8dcde] px-3 py-2 text-sm text-[#68737d]">
+            Escribe un mensaje…
+          </div>
+          <span className="rounded-md bg-[#2f3941] px-4 py-2 text-sm font-medium text-white">
+            Enviar
+          </span>
+        </div>
       </div>
     </div>
   );

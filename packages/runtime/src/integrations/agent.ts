@@ -87,6 +87,9 @@ import {
   type VisitorTurnKind,
 } from "@chatbot/domain";
 import type { VisitorAgentStreamHandlers } from "../visitor-agent-stream";
+import {
+  recordOpsSignal,
+} from "../ops-telemetry";
 
 export type AgentRunResult = {
   text: string;
@@ -95,6 +98,8 @@ export type AgentRunResult = {
   turnKind?: VisitorTurnKind;
   recordStruggle?: boolean;
   escalateToHuman?: boolean;
+  agentDegraded?: boolean;
+  llmFailureReason?: string;
 };
 
 export type AgentStreamHandlers = VisitorAgentStreamHandlers;
@@ -393,6 +398,12 @@ async function agentTurnFailureOrRescue(args: {
   userMessage: string;
   totalCredits: number;
   prose?: string;
+  telemetry?: {
+    db?: D1Database;
+    orgId?: string;
+    botId?: string;
+    conversationId?: string;
+  };
 }): Promise<AgentRunResult> {
   const visitorText = lastUserContent(args.messages, args.userMessage);
   if (args.commerceEnabled && args.commerceService) {
@@ -418,11 +429,22 @@ async function agentTurnFailureOrRescue(args: {
       }),
     );
   }
+  void recordOpsSignal(args.telemetry?.db, {
+    severity: "error",
+    category: "llm",
+    code: `llm_${args.reason}`,
+    summary: `Fallo LLM visitante: ${args.reason}`,
+    orgId: args.telemetry?.orgId,
+    botId: args.telemetry?.botId,
+    conversationId: args.telemetry?.conversationId,
+    detail: { visitorPreview: visitorText.slice(0, 160) },
+  });
   return {
     text: llmFailureText(args.reason, args.commerceEnabled),
     creditsEstimate: args.totalCredits,
     turnKind: "agent_struggling",
     recordStruggle: true,
+    llmFailureReason: args.reason,
   };
 }
 
@@ -525,6 +547,12 @@ async function finishAgentTurn(args: {
   streamHandlers?: AgentStreamHandlers;
   proseAlreadyStreamed?: boolean;
   escalateToHuman?: boolean;
+  telemetry?: {
+    db?: D1Database;
+    orgId?: string;
+    botId?: string;
+    conversationId?: string;
+  };
 }): Promise<AgentRunResult> {
   const finalized = await finalizeCommerceAgentText(args);
   if (finalized.text.trim() || args.flowAssistantAppend?.trim()) {
@@ -571,12 +599,24 @@ async function finishAgentTurn(args: {
     if (args.escalateToHuman) {
       turnKind = "faq";
     }
+    if (agentDegraded) {
+      void recordOpsSignal(args.telemetry?.db, {
+        severity: "warn",
+        category: "agent",
+        code: "agent_degraded",
+        summary: "Turno visitante en modo degradado (sin tools)",
+        orgId: args.telemetry?.orgId,
+        botId: args.telemetry?.botId,
+        conversationId: args.telemetry?.conversationId,
+      });
+    }
     return {
       text,
       creditsEstimate: finalized.credits,
       turnKind,
       recordStruggle: agentDegraded,
       escalateToHuman: args.escalateToHuman,
+      agentDegraded: agentDegraded || undefined,
     };
   }
   return agentTurnFailureOrRescue({
@@ -587,6 +627,7 @@ async function finishAgentTurn(args: {
     userMessage: args.userMessage,
     totalCredits: finalized.credits,
     prose: args.prose,
+    telemetry: args.telemetry,
   });
 }
 
@@ -607,6 +648,7 @@ export async function runAgentWithTools(
     checkoutFlowPhase: CheckoutPhase;
     agentFlowTools?: boolean;
     conversationId?: string;
+    orgId?: string;
   },
 ): Promise<AgentRunResult> {
   const visitorIntent = params.visitorIntent ?? "general";
@@ -730,6 +772,13 @@ export async function runAgentWithTools(
   const toolIndex = new Map(allTools.map((t) => [t.tool.name, t]));
 
   const traceScope: DeskTraceScope = {
+    orgId: params.orgId,
+    botId: params.botId,
+    conversationId: params.conversationId,
+  };
+  const telemetry = {
+    db: env.DB,
+    orgId: params.orgId,
     botId: params.botId,
     conversationId: params.conversationId,
   };
@@ -840,6 +889,7 @@ export async function runAgentWithTools(
             messages,
             userMessage: params.user,
             totalCredits,
+            telemetry,
           }),
             pendingPromptOut,
           );
@@ -857,6 +907,7 @@ export async function runAgentWithTools(
               messages,
               userMessage: params.user,
               totalCredits,
+              telemetry,
             }),
             pendingPromptOut,
           );
@@ -883,6 +934,7 @@ export async function runAgentWithTools(
           commerceConsentStep: flowFx.commerceConsentStep,
           flowAssistantAppend: flowFx.flowAssistantAppend,
           checkoutFlowPhase,
+          telemetry,
           integrationToolsUsed: integrationToolsUsedThisTurn,
           streamHandlers: params.handlers,
           proseAlreadyStreamed: false,
@@ -915,6 +967,7 @@ export async function runAgentWithTools(
         commerceConsentStep: flowFx.commerceConsentStep,
         flowAssistantAppend: flowFx.flowAssistantAppend,
         checkoutFlowPhase,
+        telemetry,
         integrationToolsUsed: integrationToolsUsedThisTurn,
         streamHandlers: params.handlers,
         proseAlreadyStreamed: true,
@@ -958,6 +1011,7 @@ export async function runAgentWithTools(
           messages,
           userMessage: params.user,
           totalCredits,
+          telemetry,
         }),
         pendingPromptOut,
       );
@@ -1045,6 +1099,7 @@ export async function runAgentWithTools(
           commerceConsentStep: flowFx.commerceConsentStep,
           flowAssistantAppend: flowFx.flowAssistantAppend,
           checkoutFlowPhase,
+          telemetry,
           agentDegraded: result.degraded,
           integrationToolsUsed: integrationToolsUsedThisTurn,
           streamHandlers: params.handlers,
@@ -1265,6 +1320,16 @@ export async function runAgentWithTools(
           lastToolErrorKey = errKey;
           toolErrorStreak = 1;
         }
+        void recordOpsSignal(env.DB, {
+          severity: errCode === "http_tool_limit" ? "info" : "warn",
+          category: isDeskCodemodeTool(call.name) ? "codemode" : "integration",
+          code: errCode,
+          summary: `Tool ${call.name}: ${errCode}`,
+          orgId: params.orgId,
+          botId: params.botId,
+          conversationId: params.conversationId,
+          detail: { tool: call.name },
+        });
       } else {
         toolErrorStreak = 0;
         lastToolErrorKey = null;
@@ -1300,6 +1365,7 @@ export async function runAgentWithTools(
           commerceConsentStep: flowFx.commerceConsentStep,
           flowAssistantAppend: flowFx.flowAssistantAppend,
           checkoutFlowPhase,
+          telemetry,
           integrationToolsUsed: integrationToolsUsedThisTurn,
           streamHandlers: params.handlers,
           escalateToHuman: flowFx.escalateToHuman,
@@ -1350,6 +1416,7 @@ export async function runAgentWithTools(
         commerceConsentStep: flowFx.commerceConsentStep,
         flowAssistantAppend: flowFx.flowAssistantAppend,
         checkoutFlowPhase,
+        telemetry,
         integrationToolsUsed: integrationToolsUsedThisTurn,
         streamHandlers: params.handlers,
         proseAlreadyStreamed: true,
@@ -1376,6 +1443,7 @@ export async function runAgentWithTools(
         messages,
         userMessage: params.user,
         totalCredits,
+        telemetry,
       }),
       pendingPromptOut,
     );
@@ -1406,6 +1474,7 @@ export async function runAgentWithTools(
     commerceConsentStep: flowFx.commerceConsentStep,
     flowAssistantAppend: flowFx.flowAssistantAppend,
     checkoutFlowPhase,
+    telemetry,
     integrationToolsUsed: integrationToolsUsedThisTurn,
     streamHandlers: params.handlers,
     proseAlreadyStreamed: false,

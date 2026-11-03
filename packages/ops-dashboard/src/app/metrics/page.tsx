@@ -36,10 +36,11 @@ export default function OpsMetricsPage() {
     <OpsShell>
       <main className="mx-auto max-w-6xl px-6 py-10">
         <p className="max-w-3xl text-sm leading-relaxed text-[var(--ops-muted)]">
-          Costes estimados con banda <strong>realisticAllIn</strong> ($0.70 / 1k créditos
-          medidos: chat + setup + RAG). Los precios públicos salen de{" "}
-          <code className="text-xs">packages/domain/src/economics.ts</code>; ajusta ahí si
-          cambias tarifas Creem o Cloudflare.
+          MRR, costes estimados y cupos. Para errores IA/API, p95 de créditos y latencia, abre{" "}
+          <a href="/health" className="underline">
+            Salud
+          </a>
+          .
         </p>
         {error && (
           <p className="mt-4 text-sm text-[oklch(0.45_0.15_25)]" role="alert">{error}</p>

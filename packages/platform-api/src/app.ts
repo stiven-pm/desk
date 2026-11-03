@@ -27,11 +27,14 @@ import { registerAdminWebRoutes } from "./routes/admin-web";
 import { json } from "./lib/http";
 import { logStructured } from "./lib/analytics";
 import { activeSubscriptionMiddleware } from "./middleware/active-subscription";
+import { opsApiTelemetryMiddleware } from "./middleware/ops-api-telemetry";
+import { recordOpsSignal } from "@chatbot/runtime/ops-telemetry";
 
 export function createApp(): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", requestIdMiddleware);
+  app.use("*", opsApiTelemetryMiddleware);
   app.use("*", panelCorsMiddleware());
   app.use("*", activeSubscriptionMiddleware);
 
@@ -69,11 +72,20 @@ export function createApp(): Hono<AppEnv> {
   app.notFound((c) => c.json({ error: "not_found", code: "not_found" }, 404));
 
   app.onError((err, c) => {
+    const requestId = c.get("requestId") as string | undefined;
     logStructured("error", {
       message: err.message,
-      request_id: c.get("requestId"),
+      request_id: requestId,
     });
-    return c.json({ error: "request_failed", code: "request_failed" }, 500);
+    void recordOpsSignal(c.env.DB, {
+      severity: "error",
+      category: "api",
+      code: "unhandled_exception",
+      summary: err.message.slice(0, 200),
+      requestId: requestId ?? null,
+      detail: { stack: err.stack?.slice(0, 500) },
+    });
+    return c.json({ error: "request_failed", code: "request_failed", request_id: requestId ?? null }, 500);
   });
 
   return app;

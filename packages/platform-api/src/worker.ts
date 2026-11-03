@@ -94,6 +94,28 @@ export default {
       ).run();
       const purged = await purgeExpiredConversations(env.DB, env.CONVERSATION);
       console.log(JSON.stringify({ event: "log_purge", ...purged }));
+      const { purgeOpsTelemetry } = await import("@chatbot/runtime/ops-telemetry");
+      const telemetryPurge = await purgeOpsTelemetry(env.DB);
+      console.log(JSON.stringify({ event: "ops_telemetry_purge", ...telemetryPurge }));
+      const { syncCloudflareBillingCache } = await import("./lib/cloudflare-billing");
+      const billing = await syncCloudflareBillingCache(env).catch((err) => {
+        console.error(
+          JSON.stringify({
+            event: "cf_billing_sync_failed",
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        return null;
+      });
+      if (billing) {
+        console.log(
+          JSON.stringify({
+            event: "cf_billing_sync",
+            totalUsd: billing.totalUsd,
+            error: billing.fetchError,
+          }),
+        );
+      }
     }
   },
 };
