@@ -9,6 +9,7 @@ import { MarketingShell } from "@/components/marketing-shell";
 import { MarketingHero } from "@/components/marketing-hero";
 import { PlanCards } from "@/components/plan-cards";
 import { PlanFeatureTable } from "@/components/plan-feature-table";
+import { ProductPanelPreview } from "@/components/product-panel-preview";
 import { FaqAccordion } from "@/components/faq-accordion";
 import { planFeatureMatrix } from "@/content/platform";
 
@@ -41,6 +42,16 @@ export default function PricingPage() {
           </p>
           <div className="mt-8">
             <PlanFeatureTable rows={planFeatureMatrix} />
+          </div>
+        </section>
+
+        <section className="mt-16">
+          <h2 className="font-display text-2xl">Así se ve el panel</h2>
+          <p className="mt-2 max-w-2xl text-sm text-[var(--muted)]">
+            Configuración › IA y bandeja humana — mismos componentes que en producción.
+          </p>
+          <div className="mt-8">
+            <ProductPanelPreview />
           </div>
         </section>
 

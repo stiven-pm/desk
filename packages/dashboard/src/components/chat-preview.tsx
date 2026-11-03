@@ -13,7 +13,7 @@ export function ChatPreview({ compact = false }: { compact?: boolean }) {
   return (
     <div
       className="pointer-events-none mx-auto flex w-full max-w-sm select-none flex-col overflow-hidden rounded-2xl border border-[#d8dcde] bg-white shadow-[0_12px_40px_rgba(0,0,0,0.15)]"
-      aria-label="Ejemplo ilustrativo de chat web"
+      aria-label="Vista del chat web hosted"
     >
       <header className="flex shrink-0 items-start justify-between gap-2 border-b border-[#d8dcde] bg-white px-4 py-3">
         <h2 className="min-w-0 text-base font-semibold text-[#2f3941]">Snack Bar Norte</h2>

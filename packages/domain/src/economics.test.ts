@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   estimateOrgGrossMarginUsd,
+  estimatePlanStressMarginUsd,
+  PLAN_STRESS_MARGINS,
   planRetailUsd,
   totalMeteredCredits,
 } from "./economics";
@@ -19,5 +21,16 @@ describe("economics", () => {
     expect(planRetailUsd("growth")).toBe(199);
     expect(m.mrrUsd).toBe(199);
     expect(m.variableUsd).toBeGreaterThan(0);
+  });
+
+  it("plan stress margins stay positive for all plans", () => {
+    for (const slug of ["starter", "growth", "business"] as const) {
+      const s = PLAN_STRESS_MARGINS[slug];
+      expect(s.grossUsd).toBeGreaterThan(0);
+      expect(estimatePlanStressMarginUsd(slug).grossUsd).toBe(s.grossUsd);
+    }
+    expect(PLAN_STRESS_MARGINS.business.grossUsd).toBeGreaterThan(
+      PLAN_STRESS_MARGINS.starter.grossUsd,
+    );
   });
 });

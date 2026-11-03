@@ -1,3 +1,7 @@
+/**
+ * Planificación COGS Rekov — **nunca** exponer a tenants (solo Ops auth + docs internos).
+ * Clientes ven precio del plan y cupos en marketing/billing, no margen ni coste Cloudflare.
+ */
 import type { PlanSlug } from "./plans";
 import { PLAN_LIMITS, planFromSlug } from "./plans";
 import { PLAN_MARKETING } from "./marketing";
@@ -5,12 +9,17 @@ import { RAG_METERING_CREDITS_PER_MESSAGE } from "./usage-metering";
 
 export { RAG_METERING_CREDITS_PER_MESSAGE };
 
-/** USD / 1k Desk credits — planning bands (see docs/COST_PER_MESSAGE.md). */
+/**
+ * USD / 1k Desk credits — calibrado a list price Cloudflare (GLM-5.3-Flash + BGE-M3).
+ * Ver docs/COST_PER_MESSAGE.md y docs/UNIT_ECONOMICS.md.
+ */
 export const ECONOMICS_USD_PER_1K_CREDITS = {
-  optimistic: 0.25,
-  chatTokensOnly: 0.4,
-  realisticAllIn: 0.7,
-  pessimistic: 1.1,
+  optimistic: 0.22,
+  chatTokensOnly: 0.32,
+  realisticAllIn: 0.45,
+  pessimistic: 0.55,
+  /** Solo alerta: 100% cupo créditos × rate — puede marcar Business negativo sin reflejar CF real. */
+  linearCreditCeiling: 1.1,
 } as const;
 
 /** Fixed infra + payment processing per org / month (planning). */
@@ -19,6 +28,22 @@ export const ECONOMICS_FIXED_USD_PER_ORG: Record<PlanSlug, number> = {
   growth: 13,
   business: 40,
 };
+
+/** Vectorize + plataforma compartida (planning stress), USD/mes por org. */
+export const STRESS_VECTORIZE_USD_PER_ORG: Record<PlanSlug, number> = {
+  starter: 15,
+  growth: 40,
+  business: 120,
+};
+
+/**
+ * Mensaje visitante pesado (6× GLM-5.3-Flash ~6k/1.8k tokens + RAG metered).
+ * Alineado con TYPICAL heavy + escalera/tools — ver UNIT_ECONOMICS.md.
+ */
+export const STRESS_CREDITS_PER_VISITOR_MESSAGE = 34;
+
+/** USD por mensaje visitante en escenario stress (solo LLM list price). */
+export const STRESS_LLM_USD_PER_VISITOR_MESSAGE = 0.0108;
 
 export const CREEM_FEE_RATE = 0.04;
 
@@ -57,6 +82,57 @@ export type OrgUsageSnapshot = {
 export function totalMeteredCredits(u: OrgUsageSnapshot): number {
   return u.aiCreditsUsed + u.setupCreditsUsed + u.ragMeterCredits;
 }
+
+export function stressVisitorMessagesBeforeCreditCap(slug: PlanSlug): number {
+  const limits = PLAN_LIMITS[planFromSlug(slug)];
+  const per = Math.max(1, STRESS_CREDITS_PER_VISITOR_MESSAGE);
+  return Math.min(
+    limits.monthlyMessages,
+    Math.floor(limits.monthlyAiCredits / per),
+  );
+}
+
+/** Margen bruto si cada org activa quema cupo con mensajes “stress” (techo por créditos). */
+export function estimatePlanStressMarginUsd(slug: PlanSlug): {
+  mrrUsd: number;
+  stressMessages: number;
+  llmUsd: number;
+  vectorizeUsd: number;
+  fixedUsd: number;
+  creemUsd: number;
+  grossUsd: number;
+  grossPct: number;
+} {
+  const plan = planFromSlug(slug);
+  const mrrUsd = planRetailUsd(plan);
+  const stressMessages = stressVisitorMessagesBeforeCreditCap(plan);
+  const llmUsd = stressMessages * STRESS_LLM_USD_PER_VISITOR_MESSAGE;
+  const vectorizeUsd = STRESS_VECTORIZE_USD_PER_ORG[plan];
+  const fixedUsd = ECONOMICS_FIXED_USD_PER_ORG[plan];
+  const creemUsd = creemFeeUsd(mrrUsd);
+  const cost = llmUsd + vectorizeUsd + fixedUsd + creemUsd;
+  const grossUsd = mrrUsd - cost;
+  const grossPct = mrrUsd > 0 ? (grossUsd / mrrUsd) * 100 : 0;
+  return {
+    mrrUsd,
+    stressMessages,
+    llmUsd,
+    vectorizeUsd,
+    fixedUsd,
+    creemUsd,
+    grossUsd,
+    grossPct,
+  };
+}
+
+export const PLAN_STRESS_MARGINS: Record<
+  PlanSlug,
+  ReturnType<typeof estimatePlanStressMarginUsd>
+> = {
+  starter: estimatePlanStressMarginUsd("starter"),
+  growth: estimatePlanStressMarginUsd("growth"),
+  business: estimatePlanStressMarginUsd("business"),
+};
 
 export function estimateVariableCostUsd(
   u: OrgUsageSnapshot,

@@ -13,10 +13,10 @@ export interface PlanMarketing {
 }
 
 export const PRICING_PRODUCT_LINE =
-  "Todos los planes incluyen chat web y tienda hosted, mensajes de tus visitantes y créditos de procesamiento (IA, documentos e integraciones).";
+  "Menos consultas repetidas en tu web: IA con tus documentos, checkout cuando aplica e integraciones opcionales — precio mensual fijo.";
 
 export const TEAM_SEATS_LINE =
-  "Cada plan incluye asientos de panel: dueño y administradores configuran web, integraciones y facturación; los agentes entran con su propio login solo al Panel (atención humana) y métricas, sin tocar la configuración técnica.";
+  "Asientos de panel incluidos: admins configuran; agentes solo bandeja y métricas.";
 
 function seatHighlight(slug: PlanSlug): string {
   const n = PLAN_LIMITS[slug].maxSeats;
@@ -34,9 +34,9 @@ export const PLAN_MARKETING: PlanMarketing[] = [
     slug: "starter",
     name: "Starter",
     priceUsd: 99,
-    tagline: "Chat web con IA que conoce tu negocio.",
+    tagline: "Deja de responder lo mismo en la web.",
     forWho:
-      "Un negocio que recibe consultas en la web pero sigue contestando pedidos y stock a mano.",
+      "Un negocio con consultas de pedidos, stock o horarios que hoy caen en WhatsApp o correo.",
     highlights: [
       msgHighlight("starter"),
       `${PLAN_LIMITS.starter.monthlyAiCredits.toLocaleString("es")} créditos de procesamiento incluidos`,
@@ -50,9 +50,9 @@ export const PLAN_MARKETING: PlanMarketing[] = [
     slug: "growth",
     name: "Growth",
     priceUsd: 199,
-    tagline: "Más mensajes, más equipo y más conexiones a tu operación.",
+    tagline: "Volumen diario en la web y datos de tu operación conectados.",
     forWho:
-      "Negocios con volumen diario en el chat web e integraciones con su tienda, ERP o CRM.",
+      "Equipos que ya usan el chat a diario y necesitan ERP, tienda o API en las respuestas.",
     highlights: [
       msgHighlight("growth"),
       `${PLAN_LIMITS.growth.monthlyAiCredits.toLocaleString("es")} créditos de procesamiento`,
@@ -66,9 +66,9 @@ export const PLAN_MARKETING: PlanMarketing[] = [
     slug: "business",
     name: "Business",
     priceUsd: 589,
-    tagline: "Alto volumen, historial largo y capacidad máxima de integraciones.",
+    tagline: "Alto volumen, historial largo, integraciones al tope.",
     forWho:
-      "Equipos grandes o negocios que necesitan conservar el historial más tiempo.",
+      "Equipos grandes con mucho tráfico en el chat web y conexiones exigentes a su operación.",
     highlights: [
       msgHighlight("business"),
       `${PLAN_LIMITS.business.monthlyAiCredits.toLocaleString("es")} créditos de procesamiento`,
@@ -99,7 +99,11 @@ export const PRICING_FAQ = [
   },
   {
     q: "¿Qué incluye el precio de Desk?",
-    a: "Panel de Desk, chat web y tienda hosted, documentos de tu negocio e integraciones con tus sistemas.",
+    a: "Chat web hosted, panel, bandeja humana, documentos para la IA, tienda/checkout Desk e integraciones según plan.",
+  },
+  {
+    q: "¿Enlace y widget son chats distintos?",
+    a: "No. Es el mismo chat de tu empresa: el enlace hosted y el botón en tu web abren la misma IA y documentos.",
   },
   {
     q: "¿Compiten con empresas que quieren millones de chats?",
@@ -107,7 +111,7 @@ export const PRICING_FAQ = [
   },
   {
     q: "¿Por qué no un chatbot barato?",
-    a: "Porque combina catálogo en Desk, documentos de tu negocio e integraciones opcionales — no un FAQ genérico — con precio mensual predecible y bandeja humana en el mismo chat.",
+    a: "Porque resuelve pedidos y políticas con tus documentos y sistemas — y un humano puede tomar el hilo — con un tope mensual claro, no un FAQ genérico.",
   },
   {
     q: "¿En qué moneda pago?",

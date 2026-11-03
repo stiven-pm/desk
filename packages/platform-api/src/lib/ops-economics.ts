@@ -123,6 +123,6 @@ export async function fetchOpsPlatformOverview(env: Env) {
     estimatedVariableCostUsd: variable,
     costBands: ECONOMICS_USD_PER_1K_CREDITS,
     note:
-      "Costes variables usan banda realisticAllIn ($0.70/1k créditos medidos). Vectorize global puede subir la realidad — ver docs/COST_PER_MESSAGE.md.",
+      "Solo uso interno Rekov (Ops). El panel del cliente no recibe costes ni márgenes. Variable: créditos medidos × realisticAllIn.",
   };
 }

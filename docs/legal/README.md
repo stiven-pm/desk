@@ -23,7 +23,19 @@ Public URLs (after deploy to production):
 3. **Category:** Business or Productivity.
 4. **App Review videos:** send message via API + create template via management API (per Meta checklist).
 
-Nota: el login de Desk (`/login`) aún no muestra enlaces a términos en la UI; Meta solo pide la **URL pública** del documento, no el enlace en pantalla.
+Nota: registro e inicio de sesión en Desk (`/register`, `/login`) exigen **aceptación explícita** de términos, privacidad y aviso de IA antes de autenticarse. Meta sigue requiendo además la **URL pública** del documento.
+
+## Versión legal (aceptación en producto)
+
+- Constante: `LEGAL_TERMS_VERSION` en `packages/domain/src/legal-meta.ts` (p. ej. `2026-11-03`).
+- Migración D1: `infra/cloudflare/d1/0052_user_terms_acceptance.sql` (`terms_accepted_version`, `terms_accepted_at` en `users`).
+- Aplicar migración en test/prod **antes** de desplegar API que persiste aceptación en login/registro.
+
+## Geo / subencargados
+
+- **No** usamos ip.guide, ipquery.io ni otros proveedores externos de geolocalización por IP.
+- Ubicación aproximada (país/ciudad) solo puede derivarse de cabeceras Cloudflare en el borde para contexto de chat y seguridad (`visitor-geo.ts`).
+- Subencargados principales en política: Cloudflare, Creem, integraciones del cliente.
 
 ## Entity (public copy)
 

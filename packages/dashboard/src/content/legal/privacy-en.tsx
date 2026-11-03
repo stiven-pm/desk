@@ -10,6 +10,8 @@ export const privacyNavEn = [
   { href: "#security", label: "Security" },
   { href: "#rights", label: "Your rights" },
   { href: "#international", label: "International" },
+  { href: "#children", label: "Children" },
+  { href: "#changes", label: "Changes" },
 ];
 
 export function PrivacyPolicyEn() {
@@ -71,8 +73,10 @@ export function PrivacyPolicyEn() {
             <a href="/legal/cookies">Cookie Notice</a>).
           </li>
           <li>
-            <strong>Logs:</strong> API request metadata, error traces, audit events for security and billing
-            metering.
+            <strong>Logs and network data:</strong> IP address, API request metadata, error traces, audit events for
+            security and billing metering. In chat, Cloudflare may attach approximate network data at the edge (e.g.
+            country or city) for session context and security — <strong>without</strong> third-party IP geolocation
+            services (see <a href="/legal/cookies">Cookie Notice</a>).
           </li>
         </ul>
         <h3 id="label">Privacy nutrition label (summary)</h3>
@@ -169,13 +173,14 @@ export function PrivacyPolicyEn() {
         <p>We share personal information only with:</p>
         <ul>
           <li>
-            <strong>Subprocessors</strong> that help us run the Service, including Cloudflare (hosting, D1, R2,
-            Workers AI, Vectorize, email), payment processor Creem (subscriptions and wallet), IP geolocation providers (ip.guide,
-            ipquery.io) for dashboard sign-in, and transactional email when enabled.
+            <strong>Cloudflare, Inc.</strong> — hosting, D1, R2, Workers, Workers AI, Vectorize, and transactional
+            email when enabled.
           </li>
           <li>
-            <strong>Customers&apos; chosen integrations</strong> (APIs, webhooks, MCP servers) when the Customer
-            configures them.
+            <strong>Creem</strong> — subscriptions and one-time wallet top-ups.
+          </li>
+          <li>
+            <strong>Customer-configured integrations</strong> — APIs, webhooks, and MCP servers you choose.
           </li>
           <li>
             <strong>Professional advisers</strong> and authorities when required by law or to protect rights and
@@ -186,6 +191,11 @@ export function PrivacyPolicyEn() {
             where required.
           </li>
         </ul>
+        <p className="mt-3">
+          We do <strong>not</strong> use third-party IP geolocation services (such as ip.guide or ipquery.io).
+          Approximate location (e.g. country or city) may come only from Cloudflare edge headers when operating the
+          chat, for session context and security.
+        </p>
         <p className="mt-3">
           We do <strong>not</strong> sell Platform Data or share it with third parties for advertising. We use
           contracted subprocessors only to operate the Service.
@@ -265,8 +275,9 @@ export function PrivacyPolicyEn() {
       <section id="changes">
         <h2>Changes</h2>
         <p>
-          We may update this Policy. We will post the new date and, for material changes, notify account
-          administrators by email or in-product notice.
+          We may update this Policy. We will post the revision date and, for material changes, notify account
+          administrators by email or in-product notice. Continued use after notice constitutes acceptance where
+          permitted by law.
         </p>
       </section>
 

@@ -33,14 +33,13 @@ Identidad visual: [BRANDING.md](./BRANDING.md). Posicionamiento extendido: [POSI
 
 **Starter**, **Growth**, **Business** — `packages/domain/src/plans.ts`. Precios USD en `packages/domain/src/marketing.ts`.
 
-| Plan | Créditos IA / mes | Mensajes / mes | Bots | Docs RAG | Orígenes / bot | Retención |
-|------|-------------------|----------------|------|----------|----------------|-----------|
-| **Starter** | 50 000 | 2 000 | 1 | 5 | 3 | 14 días |
-| **Growth** | 200 000 | 10 000 | 5 | 25 | 10 | 30 días |
-| **Business** | 1 000 000 | 50 000 | 25 | 100 | 50 | 90 días |
+| Plan | Precio | Créditos / mes | Mensajes / mes | Bots | Docs RAG | Asientos | Retención |
+|------|--------|----------------|----------------|------|----------|----------|-----------|
+| **Starter** | $99 | 50 000 | 2 500 | 1 | 20 | 3 | 30 días |
+| **Growth** | $199 | 120 000 | 12 000 | 5 | 40 | 10 | 60 días |
+| **Business** | $589 | 480 000 | 50 000 | 25 | 120 | 35 | 90 días |
 
-- **Starter:** documentos + chat (sin OpenAPI, MCP, conectores ni webhooks salientes).
-- **Growth+:** integraciones en vivo en panel **Integraciones** (estándar SaaS: Intercom/Zendesk usan “Integrations”).
+Integraciones HTTP/MCP/conectores: **todos los planes** (límites numéricos en `plans.ts`). Business añade shell enterprise y retención larga.
 
 Purga: cron `0 3 * * *` — D1 + estado DO (`/purge`) según `logRetentionDays`.
 
@@ -88,11 +87,11 @@ Roles del panel (`owner`, `admin`, `developer`, `agent`, `viewer`) controlan **e
 
 ## Gaps conocidos (no bloquean MVP)
 
-1. Chat por `botId` en URL (hoy: org slug, primer bot).
-2. Widget sin paridad WebSocket completa del chat alojado.
-3. Calidad de tool-calling acotada por Workers AI + fallback JSON.
-4. HubSpot/Shopify: OAuth + un paso de config (tienda, etc.).
-5. Wallet créditos + Creem one-time — diseño en `docs/WALLET_PAYGO.md`; coste por mensaje en `docs/COST_PER_MESSAGE.md`.
+1. **Catálogo nativo en panel** — venta vía tienda Desk + integraciones; falta UX “mis productos” (P0 en `SALES_AND_CHAT_ROADMAP.md`).
+2. Chat por `botId` en URL (hoy: org slug, primer bot).
+3. Widget / theme: paridad visual con web del cliente.
+4. Productos Creem one-time para wallet en prod (`CREEM_PRODUCT_CREDITS_*`).
+5. Métricas tenant resolución vs handoff.
 
 ## Comandos
 

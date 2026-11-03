@@ -58,6 +58,7 @@ function RegisterForm() {
           password,
           orgName: orgName.trim(),
           timezone,
+          acceptTerms: true as const,
         }),
       });
       localStorage.setItem("token", data.token);

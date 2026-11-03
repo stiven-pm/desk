@@ -7,13 +7,13 @@ export const platformStats = [
     value: PLAN_LIMITS.business.monthlyMessages.toLocaleString("es"),
     label: "Mensajes/mes (Business)",
   },
-  { value: "Chat web", label: "Tienda + asistente hosted" },
+  { value: "Chat web", label: "Tienda + chat hosted" },
 ];
 
 export const platformBenefits = [
   {
     title: "Deja de pagar con tiempo del equipo",
-    body: "Lo que hoy es el décimo correo igual lo atiende el asistente — tu gente vende y desbloquea.",
+    body: "Lo que hoy es el décimo correo igual lo atiende el chat — tu gente vende y desbloquea.",
   },
   {
     title: "Convierte consultas en confianza",
@@ -33,7 +33,7 @@ export const platformBenefits = [
   },
   {
     title: "Crece contigo",
-    body: "Más mensajes y más asientos en el panel — mismo producto, plan superior.",
+    body: "Más mensajes y más asientos en el panel — mismo chat, plan superior.",
   },
   {
     title: "Equipo sin mezclar permisos",
@@ -49,7 +49,7 @@ export const platformModules = [
   },
   {
     title: "Donde ya te compran",
-    body: "En tu chat web, en el momento de duda — antes de que se vayan.",
+    body: "Mismo chat en enlace hosted o widget en tu web — un solo hilo, un solo conocimiento.",
     tags: ["Conversión", "Chat"],
   },
   {
@@ -109,10 +109,10 @@ export const planFeatureMatrix: PlanFeatureRow[] = [
     business: String(PLAN_LIMITS.business.maxSeats),
   },
   {
-    label: "Chat web y tienda hosted",
-    starter: "1",
-    growth: "1",
-    business: "1",
+    label: "Chat web hosted (enlace + widget, mismo chat)",
+    starter: true,
+    growth: true,
+    business: true,
   },
   {
     label: "Documentos para entrenar la IA",
@@ -127,7 +127,7 @@ export const planFeatureMatrix: PlanFeatureRow[] = [
     business: `${PLAN_LIMITS.business.logRetentionDays} días`,
   },
   {
-    label: "Acciones a tus sistemas (por asistente)",
+    label: "Acciones a tus sistemas",
     starter: String(PLAN_LIMITS.starter.maxHttpToolsPerBot),
     growth: String(PLAN_LIMITS.growth.maxHttpToolsPerBot),
     business: String(PLAN_LIMITS.business.maxHttpToolsPerBot),

@@ -12,11 +12,13 @@ export const registerBodySchema = z.object({
   password: z.string().min(10).max(128),
   orgName: z.string().min(2).max(120),
   timezone: orgTimezoneSchema.optional(),
+  acceptTerms: z.literal(true),
 });
 
 export const loginBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1).max(128),
+  acceptTerms: z.literal(true),
 });
 
 export const createBotBodySchema = z.object({

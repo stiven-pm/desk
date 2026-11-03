@@ -149,12 +149,6 @@ export function registerAdminRoutes(app: Hono<AppEnv>): void {
           current: currentLimits.maxSeats,
           target: targetLimits.maxSeats,
         },
-        {
-          key: "maxBots",
-          label: "Asistentes",
-          current: currentLimits.maxBots,
-          target: targetLimits.maxBots,
-        },
       ],
       billingNote:
         isDowngrade
@@ -170,18 +164,12 @@ export function registerAdminRoutes(app: Hono<AppEnv>): void {
     const parsed = createBotBodySchema.safeParse(await c.req.json());
     if (!parsed.success) return apiError("invalid_body", 400);
 
-    const org = await c.env.DB.prepare(
-      `SELECT plan_slug FROM orgs WHERE id = ?`,
-    )
-      .bind(auth.user.orgId)
-      .first<{ plan_slug: string }>();
-    const limits = PLAN_LIMITS[planFromSlug(org?.plan_slug ?? "starter")];
     const count = await c.env.DB.prepare(
       `SELECT COUNT(*) as n FROM bots WHERE org_id = ?`,
     )
       .bind(auth.user.orgId)
       .first<{ n: number }>();
-    if ((count?.n ?? 0) >= limits.maxBots) return apiError("plan_bot_limit", 403);
+    if ((count?.n ?? 0) >= 1) return apiError("plan_bot_limit", 403);
 
     const botId = randomId();
     await c.env.DB.prepare(

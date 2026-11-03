@@ -5,6 +5,8 @@ import { MarketingHero } from "@/components/marketing-hero";
 import { PlanCards } from "@/components/plan-cards";
 import { ChatPreview } from "@/components/chat-preview";
 import { ProductPanelPreview } from "@/components/product-panel-preview";
+import { KnowledgeDocumentsPreview } from "@/components/knowledge-documents-preview";
+import { InboxMarketingPreview } from "@/components/inbox-marketing-preview";
 import { DataFlowPreview } from "@/components/data-flow-preview";
 import { FaqAccordion } from "@/components/faq-accordion";
 import {
@@ -93,8 +95,24 @@ export default function LandingPage() {
           La IA responde con lo que subes al panel y lo que expongas por integración; si no hay dato, escala a tu
           bandeja en el mismo chat.
         </p>
-        <div className="mt-8">
+        <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <DataFlowPreview />
+          <InboxMarketingPreview compact />
+        </div>
+      </section>
+
+      <section className="border-y border-[var(--border)] bg-[var(--muted-bg)]/30">
+        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-14 lg:grid-cols-2 lg:items-start">
+          <KnowledgeDocumentsPreview />
+          <div className="lg:pt-8">
+            <p className="text-xs font-medium uppercase tracking-widest text-[var(--muted)]">Bandeja</p>
+            <h2 className="mt-2 font-display text-2xl md:text-3xl">
+              Un humano entra en el mismo hilo
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+              Cuando la IA escala, tu equipo responde desde el panel con el historial completo.
+            </p>
+          </div>
         </div>
       </section>
 

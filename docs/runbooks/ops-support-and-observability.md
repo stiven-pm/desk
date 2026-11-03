@@ -34,7 +34,7 @@ Retención: cron 03:00 UTC purga señales &gt; 45 d, turnos &gt; 90 d.
 
 ## Bandas de coste
 
-Siguen en `@chatbot/domain` (`ECONOMICS_USD_PER_1K_CREDITS`). Ops calcula variable + fijo + Creem sobre **créditos medidos reales** del mes, no números hardcodeados en UI.
+Siguen en `@chatbot/domain` (`ECONOMICS_USD_PER_1K_CREDITS`, `PLAN_STRESS_MARGINS`). Ops calcula variable + fijo + Creem sobre **créditos medidos reales** (`realisticAllIn` $0.45/1k). **Métricas** muestra margen **stress por plan** (techo créditos + GLM list) — no uses `linearCreditCeiling` para pricing. Ver `docs/UNIT_ECONOMICS.md`.
 
 ## Cloudflare (factura real MTD)
 

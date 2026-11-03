@@ -61,7 +61,7 @@ export default function OpsMetricsPage() {
               value={data.meteredCreditsMonth.toLocaleString("es")}
             />
             <Card
-              label="COGS variable est."
+              label="IA variable est. (interno)"
               value={`$${data.estimatedVariableCostUsd.toFixed(2)}`}
             />
             <Card label="Periodo" value={data.periodStart} />
@@ -69,7 +69,7 @@ export default function OpsMetricsPage() {
         )}
         {data && (
           <section className="mt-10 rounded-[var(--ops-radius)] border border-[var(--ops-border)] bg-white p-5 text-sm">
-            <h2 className="font-medium">Bandas USD / 1k créditos</h2>
+            <h2 className="font-medium">Bandas USD / 1k créditos (planificación)</h2>
             <ul className="mt-3 space-y-1 text-[var(--ops-muted)]">
               {Object.entries(data.costBands).map(([k, v]) => (
                 <li key={k}>

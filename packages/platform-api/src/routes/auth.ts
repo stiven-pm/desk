@@ -4,6 +4,7 @@ import {
   loginBodySchema,
   resolveMemberCapabilities,
   resolveOrgTimezone,
+  LEGAL_TERMS_VERSION,
 } from "@chatbot/domain";
 import type { AppEnv, Env } from "../types";
 import {
@@ -71,8 +72,9 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
 
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)`,
-      ).bind(userId, email, passwordHash),
+        `INSERT INTO users (id, email, password_hash, terms_accepted_version, terms_accepted_at)
+         VALUES (?, ?, ?, ?, datetime('now'))`,
+      ).bind(userId, email, passwordHash, LEGAL_TERMS_VERSION),
       c.env.DB.prepare(
         `INSERT INTO orgs (id, name, slug, status, period_start, timezone) VALUES (?, ?, ?, 'pending', ?, ?)`,
       ).bind(orgId, orgName, slug, period, orgTimezone),
@@ -165,12 +167,13 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
       challenge_id?: string;
       code?: string;
       orgId?: string;
+      acceptTerms?: boolean;
     };
     const email = body.email?.trim().toLowerCase() ?? "";
     const password = body.password ?? "";
     const challengeId = body.challenge_id?.trim() ?? "";
     const code = body.code?.trim() ?? "";
-    if (!email || !password || !challengeId || !code) {
+    if (!email || !password || !challengeId || !code || body.acceptTerms !== true) {
       return apiError("email_password_and_otp_required", 400);
     }
 
@@ -201,9 +204,9 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
       return apiError("rate_limited", 429);
     }
 
-    const body = (await c.req.json()) as { email?: string };
+    const body = (await c.req.json()) as { email?: string; acceptTerms?: boolean };
     const email = body.email?.trim().toLowerCase();
-    if (!email) return apiError("email_required", 400);
+    if (!email || body.acceptTerms !== true) return apiError("email_required", 400);
 
     const account = await c.env.DB.prepare(`SELECT id, email FROM users WHERE email = ?`)
       .bind(email)
@@ -222,9 +225,13 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
   });
 
   app.post("/v1/admin/auth/magic-consume", async (c) => {
-    const body = (await c.req.json()) as { token?: string; orgId?: string };
+    const body = (await c.req.json()) as {
+      token?: string;
+      orgId?: string;
+      acceptTerms?: boolean;
+    };
     const token = body.token?.trim();
-    if (!token) return apiError("invalid_body", 400);
+    if (!token || body.acceptTerms !== true) return apiError("invalid_body", 400);
 
     const peeked = await peekMagicLoginToken(c.env, token);
     if (!peeked) return apiError("invalid_token", 401);
@@ -331,6 +338,12 @@ async function resolveTenantLogin(
     email: account.email,
     role: membership.role,
   });
+
+  await c.env.DB.prepare(
+    `UPDATE users SET terms_accepted_version = ?, terms_accepted_at = datetime('now') WHERE id = ?`,
+  )
+    .bind(LEGAL_TERMS_VERSION, account.id)
+    .run();
 
   return { kind: "session", token, orgId: membership.org_id };
 }

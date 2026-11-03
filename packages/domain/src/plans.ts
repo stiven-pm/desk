@@ -6,7 +6,6 @@ export interface PlanLimits {
   monthlyMessages: number;
   /** Included panel users (owner counts toward the limit). */
   maxSeats: number;
-  maxBots: number;
   maxRagSources: number;
   maxOriginsPerBot: number;
   maxHttpToolsPerBot: number;
@@ -21,9 +20,7 @@ export interface PlanLimits {
 }
 
 /**
- * Planes diferencian **volumen y escala** (conversaciones, créditos, asistentes, equipo).
- * Las mismas capacidades de producto (RAG, APIs, MCP, bandeja, handoff) están en todos los planes;
- * Business añade retención larga y shell enterprise.
+ * Planes diferencian **volumen y escala** (mensajes, créditos, equipo, integraciones).
  */
 export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
   starter: {
@@ -31,7 +28,6 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
     monthlyAiCredits: 50_000,
     monthlyMessages: 2_500,
     maxSeats: 3,
-    maxBots: 1,
     maxRagSources: 20,
     maxOriginsPerBot: 3,
     maxHttpToolsPerBot: 12,
@@ -47,7 +43,6 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
     monthlyAiCredits: 120_000,
     monthlyMessages: 12_000,
     maxSeats: 10,
-    maxBots: 5,
     maxRagSources: 40,
     maxOriginsPerBot: 0,
     maxHttpToolsPerBot: 24,
@@ -63,7 +58,6 @@ export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
     monthlyAiCredits: 480_000,
     monthlyMessages: 50_000,
     maxSeats: 35,
-    maxBots: 25,
     maxRagSources: 120,
     maxOriginsPerBot: 0,
     maxHttpToolsPerBot: 48,

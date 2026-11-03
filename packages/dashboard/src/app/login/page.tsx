@@ -37,17 +37,22 @@ function LoginForm() {
   const [banner, setBanner] = useState<string | null>(null);
   const [magicHint, setMagicHint] = useState(MAGIC_HINT);
   const [loading, setLoading] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [mode, setMode] = useState<"password" | "magic">("password");
   const submitting = useRef(false);
   const magicHandled = useRef(false);
   const [pendingMagic, setPendingMagic] = useState<string | null>(null);
 
   async function consumeMagic(token: string, pickedOrgId?: string) {
+    if (!acceptedTerms) {
+      setError("Debes aceptar los términos legales para continuar.");
+      return;
+    }
     const data = await api<{ token?: string; needOrgPick?: boolean; orgs?: OrgPick[] }>(
       "/v1/admin/auth/magic-consume",
       {
         method: "POST",
-        body: JSON.stringify({ token, orgId: pickedOrgId || undefined }),
+        body: JSON.stringify({ token, orgId: pickedOrgId || undefined, acceptTerms: true }),
       },
     );
     if (data.needOrgPick && data.orgs) {
@@ -64,16 +69,19 @@ function LoginForm() {
 
   useEffect(() => {
     const magic = searchParams.get("magic");
-    if (!magic || magicHandled.current) return;
+    if (!magic) return;
+    if (!acceptedTerms) return;
+    if (magicHandled.current) return;
     magicHandled.current = true;
     setLoading(true);
     setError(null);
     void consumeMagic(magic)
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Enlace inválido o caducado.");
+        magicHandled.current = false;
       })
       .finally(() => setLoading(false));
-  }, [router, searchParams]);
+  }, [router, searchParams, acceptedTerms]);
 
   async function submitMagicOrgPick(e: React.FormEvent) {
     e.preventDefault();
@@ -107,6 +115,10 @@ function LoginForm() {
 
   async function submitPassword(e: React.FormEvent) {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setError("Debes aceptar los términos legales para continuar.");
+      return;
+    }
     if (submitting.current || loading) return;
     submitting.current = true;
     setLoading(true);
@@ -126,6 +138,7 @@ function LoginForm() {
           email: email.trim().toLowerCase(),
           password,
           orgId: orgId || undefined,
+          acceptTerms: true,
         }),
       });
       if (data.requires_otp && data.challenge_id) {
@@ -144,6 +157,10 @@ function LoginForm() {
 
   async function submitOtp(e: React.FormEvent) {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setError("Debes aceptar los términos legales para continuar.");
+      return;
+    }
     if (!challengeId || submitting.current || loading) return;
     submitting.current = true;
     setLoading(true);
@@ -161,6 +178,7 @@ function LoginForm() {
           challenge_id: challengeId,
           code: otp,
           orgId: orgId || undefined,
+          acceptTerms: true,
         }),
       });
       await applyLoginResult(data);
@@ -174,6 +192,10 @@ function LoginForm() {
 
   async function submitMagic(e: React.FormEvent) {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setError("Debes aceptar los términos legales para continuar.");
+      return;
+    }
     if (submitting.current || loading) return;
     submitting.current = true;
     setLoading(true);
@@ -263,13 +285,38 @@ function LoginForm() {
           </button>
         </div>
 
+        <label className="mb-4 flex cursor-pointer items-start gap-3 text-sm text-[var(--muted)]">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            disabled={loading}
+          />
+          <span>
+            Acepto los{" "}
+            <Link href="/terminos" className="underline" target="_blank">
+              términos
+            </Link>
+            ,{" "}
+            <Link href="/privacidad" className="underline" target="_blank">
+              privacidad
+            </Link>{" "}
+            y{" "}
+            <Link href="/legal#ia" className="underline" target="_blank">
+              uso de IA
+            </Link>{" "}
+            vigentes de Desk.
+          </span>
+        </label>
+
         {pendingMagic && orgs ? (
           <form onSubmit={(e) => void submitMagicOrgPick(e)} className="space-y-4">
             {orgPicker}
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={loading || !orgId}
+              disabled={loading || !orgId || !acceptedTerms}
               className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] py-2.5 text-sm font-medium text-[var(--accent-foreground)] disabled:opacity-60"
             >
               {loading ? "Entrando…" : "Continuar"}
@@ -298,7 +345,7 @@ function LoginForm() {
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={loading || otp.length < 8}
+              disabled={loading || otp.length < 8 || !acceptedTerms}
               className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] py-2.5 text-sm font-medium text-[var(--accent-foreground)] disabled:opacity-60"
             >
               {loading ? "Verificando…" : "Confirmar e entrar"}
@@ -345,7 +392,7 @@ function LoginForm() {
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !acceptedTerms}
               className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] py-2.5 text-sm font-medium text-[var(--accent-foreground)] disabled:opacity-60"
             >
               {loading ? "Entrando…" : "Continuar"}
@@ -369,7 +416,7 @@ function LoginForm() {
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !acceptedTerms}
               className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] py-2.5 text-sm font-medium text-[var(--accent-foreground)] disabled:opacity-60"
             >
               {loading ? "Enviando…" : "Enviar magic link"}

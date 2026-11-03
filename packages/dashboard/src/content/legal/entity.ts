@@ -1,3 +1,5 @@
+import { LEGAL_TERMS_VERSION } from "@chatbot/domain";
+
 /** Public legal identity — no tax ID in customer-facing copy. */
 export const LEGAL_ENTITY = {
   legalName: "Rekov Systems S.A.S.",
@@ -10,6 +12,9 @@ export const LEGAL_ENTITY = {
   privacyEmail: "privacy@rekov.co",
   securityEmail: "security@rekov.co",
   dmcaEmail: "contact@rekov.co",
-  lastUpdatedEn: "October 21, 2026",
-  lastUpdatedEs: "21 de octubre de 2026",
+  lastUpdatedEn: "November 3, 2026",
+  lastUpdatedEs: "3 de noviembre de 2026",
+  termsVersion: LEGAL_TERMS_VERSION,
 } as const;
+
+export { LEGAL_TERMS_VERSION };

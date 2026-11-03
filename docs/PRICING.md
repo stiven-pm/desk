@@ -1,8 +1,8 @@
-# Desk — precios y economía (referencia)
+# Desk — precios (referencia)
 
-Producto **chat web + tienda hosted**. Precios públicos y copy en `packages/domain/src/marketing.ts`.
+Producto **chat web + tienda hosted + bandeja**. Copy público: `packages/domain/src/marketing.ts`.
 
-## Planes (USD/mes, todo incluido)
+## Planes (USD/mes)
 
 | Plan | Precio | Mensajes/mes | Créditos/mes |
 |------|--------|--------------|--------------|
@@ -10,20 +10,15 @@ Producto **chat web + tienda hosted**. Precios públicos y copy en `packages/dom
 | Growth | **199** | 12 000 | 120 000 |
 | Business | **589** | 50 000 | 480 000 |
 
-Cada plan incluye chat web hosted, mensajes de visitantes y créditos de procesamiento según la tabla.
+Incluye chat hosted, procesamiento IA (modelo + documentos + tools) y límites de asientos/bots/RAG en `plans.ts`.
 
-## COGS interno (planificación)
+## Economía y venta
 
-- Fijo por org: `ECONOMICS_FIXED_USD_PER_ORG` en `packages/domain/src/economics.ts`
-- Variable IA: `docs/COST_PER_MESSAGE.md` y bandas `ECONOMICS_USD_PER_1K_CREDITS`
-- Creem: ~4% + USD 0,30 por cobro
+| Doc | Contenido |
+|-----|-----------|
+| `UNIT_ECONOMICS.md` | Márgenes stress por plan, bandas Ops, error Business/1.10 |
+| `COST_PER_MESSAGE.md` | Desglose Cloudflare por mensaje |
+| `POSITIONING.md` | ICP, sí/no, brechas (catálogo panel, Creem wallet) |
+| `CREEM_AND_PRICING.md` | SKUs Creem |
 
-Margen de referencia: `estimateOrgGrossMarginUsd()`.
-
-## Creem y add-ons
-
-Ver **`docs/CREEM_AND_PRICING.md`** (productos `CREEM_PRODUCT_*`, packs de créditos, qué no está cableado).
-
-## Límites
-
-`packages/domain/src/plans.ts` — bots, asientos, fuentes RAG, integraciones.
+COGS y márgenes: solo `economics.ts` + Ops (`requireOps`) + docs internos — **nunca** en `/dashboard` ni APIs `/v1/admin/*` para tenants.

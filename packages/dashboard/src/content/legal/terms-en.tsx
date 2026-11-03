@@ -19,8 +19,10 @@ export function TermsOfServiceEn() {
         <p>
           These Terms of Service (&quot;Terms&quot;) are a binding agreement between you and {e.legalName}{" "}
           (&quot;{e.brand}&quot;, &quot;we&quot;, &quot;us&quot;) governing access to {e.productName} at{" "}
-          <a href={e.siteUrl}>{e.siteUrl}</a> and related APIs (the &quot;Service&quot;). By registering, clicking
-          accept, or using the Service, you agree to these Terms. If you use the Service on behalf of a company,
+          <a href={e.siteUrl}>{e.siteUrl}</a> and related APIs (the &quot;Service&quot;). By registering, signing in
+          with acceptance checked, clicking
+          accept, or using the Service, you agree to these Terms and our{" "}
+          <a href="/privacy">Privacy Policy</a>. If you use the Service on behalf of a company,
           you represent that you have authority to bind that entity.
         </p>
         <p className="mt-3">

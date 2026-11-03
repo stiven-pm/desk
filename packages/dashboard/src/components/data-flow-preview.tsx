@@ -4,7 +4,7 @@ export function DataFlowPreview() {
   return (
     <div
       className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--card)] p-5 md:p-6"
-      aria-label="Flujo ilustrativo de consulta en tiempo real"
+      aria-label="Flujo de consulta en el chat"
     >
       <ol className="grid gap-4 md:grid-cols-3">
         {liveDataFlow.map((step, i) => (
@@ -25,8 +25,8 @@ export function DataFlowPreview() {
         ))}
       </ol>
       <p className="mt-4 text-xs text-[var(--muted)]">
-        Sin integración: catálogo en Desk + PDFs/FAQ. Con HTTP o MCP: consultas a tu sistema. No incluye
-        rastreo de envíos tipo courier salvo que tú lo conectes. Ejemplo ilustrativo.
+        Catálogo en Desk + documentos; con integraciones, datos en vivo de tu sistema. Sin courier salvo que lo
+        conectes.
       </p>
     </div>
   );

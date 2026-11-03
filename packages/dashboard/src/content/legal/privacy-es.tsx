@@ -8,6 +8,9 @@ export const privacyNavEs = [
   { href: "#retencion", label: "Tiempo de conservación" },
   { href: "#seguridad", label: "Seguridad" },
   { href: "#derechos", label: "Tus derechos" },
+  { href: "#transferencias", label: "Transferencias" },
+  { href: "#menores", label: "Menores" },
+  { href: "#cambios", label: "Cambios" },
 ];
 
 export function PrivacyPolicyEs() {
@@ -50,8 +53,10 @@ export function PrivacyPolicyEs() {
             y metadatos de conversación (fecha, estado de entrega).
           </li>
           <li>
-            <strong>Automático:</strong> cookies en sitio de marketing y panel, logs técnicos y de auditoría (ver{" "}
-            <a href="/legal/cookies">aviso de cookies</a>).
+            <strong>Automático:</strong> dirección IP, cookies en marketing y panel, logs técnicos y de auditoría; en
+            el chat, Cloudflare puede añadir datos aproximados de red en el borde (p. ej. país o ciudad) para contexto
+            de sesión y seguridad — <strong>sin</strong> servicios externos de geolocalización por IP (ver{" "}
+            <a href="/legal/cookies">cookies</a>).
           </li>
         </ul>
         <h3 id="etiqueta">Etiqueta resumen de privacidad</h3>
@@ -120,11 +125,28 @@ export function PrivacyPolicyEs() {
       <section id="compartimos">
         <h2>Subencargados y compartición</h2>
         <p>
-          No vendemos datos personales. No compartimos datos de la plataforma con terceros para publicidad ni fines
-          ajenos al Servicio. Usamos <strong>encargados del tratamiento</strong> bajo contrato, entre ellos Cloudflare,
-          Inc. (infraestructura, almacenamiento, procesamiento con IA y webhooks), Creem (pagos), proveedores de geolocalización por IP
-          del panel e integraciones que tú configures. Lista actualizada a solicitud en{" "}
-          {e.privacyEmail}.
+          No vendemos datos personales. Usamos solo encargados contractuales para operar el Servicio, entre ellos:
+        </p>
+        <ul>
+          <li>
+            <strong>Cloudflare, Inc.</strong> — hosting, D1, R2, Workers, Workers AI, Vectorize, correo transaccional
+            cuando esté activo.
+          </li>
+          <li>
+            <strong>Creem</strong> — suscripciones y pagos one-time (wallet).
+          </li>
+          <li>
+            <strong>Integraciones que tú configures</strong> — APIs, webhooks y servidores MCP de tu elección.
+          </li>
+          <li>
+            <strong>Asesores profesionales</strong> y autoridades cuando la ley lo exija o para proteger derechos y
+            seguridad.
+          </li>
+        </ul>
+        <p className="mt-3">
+          No compartimos datos con terceros para publicidad. Lista de subencargados actualizada a solicitud en{" "}
+          <a href={`mailto:${e.privacyEmail}`}>{e.privacyEmail}</a>. Cambios materiales se notificarán a
+          administradores de cuentas activas.
         </p>
         <p className="mt-3" id="authorities">
           <strong>Solicitudes de autoridades.</strong> Si recibimos una solicitud legal de una autoridad pública,
@@ -136,8 +158,9 @@ export function PrivacyPolicyEs() {
       <section id="retencion">
         <h2>Conservación</h2>
         <p>
-          Cuenta mientras dure la suscripción y plazo razonable posterior. Conversaciones según días del plan.
-          Copias de seguridad pueden persistir un tiempo limitado tras eliminación.
+          Cuenta mientras dure la suscripción y plazo razonable posterior (legal, fiscal, disputas). Conversaciones según
+          retención del plan. Copias de seguridad del proveedor cloud pueden persistir un tiempo limitado tras
+          eliminación. Exporta o solicita borrado desde el panel o en {e.privacyEmail}.
         </p>
       </section>
 
@@ -148,24 +171,47 @@ export function PrivacyPolicyEs() {
           <li>Contraseñas con hash; secretos de integración cifrados.</li>
           <li>Monitoreo, límites de tasa y procedimiento de respuesta a incidentes.</li>
         </ul>
-        <p className="mt-3">Vulnerabilidades: {e.securityEmail}.</p>
+        <p className="mt-3">
+          Vulnerabilidades: {e.securityEmail}. Si confirmamos una brecha que afecte datos personales, notificaremos a
+          clientes y autoridades según la ley aplicable.
+        </p>
       </section>
 
       <section id="derechos">
         <h2>Derechos (Colombia, GDPR, EE. UU.)</h2>
         <p>
-          Puedes solicitar acceso, rectificación, supresión, portabilidad u oposición escribiendo a{" "}
-          <a href={`mailto:${e.privacyEmail}`}>{e.privacyEmail}</a>. En Colombia, Ley 1581 de 2012. Usuarios finales:
-          contacta primero al negocio con el que hablaste en el chat. Residentes UE/UK pueden reclamar ante su autoridad de
-          control.
+          Según tu ubicación: acceso, rectificación, supresión, portabilidad, oposición, limitación y revocación del
+          consentimiento. <strong>Colombia:</strong> Ley 1581 de 2012 — escribe a {e.privacyEmail}.{" "}
+          <strong>California (CCPA/CPRA):</strong> derecho a conocer, eliminar y corregir; no vendemos ni compartimos
+          para publicidad comportamental. <strong>UE/Reino Unido (GDPR):</strong> puedes reclamar ante tu autoridad de
+          control. <strong>Usuarios finales del chat:</strong> contacta primero al negocio que opera el chat; te
+          asistiremos como encargados cuando el cliente lo solicite.
         </p>
       </section>
 
       <section id="transferencias">
         <h2>Transferencias internacionales</h2>
         <p>
-          Datos pueden procesarse fuera de Colombia (p. ej. EE. UU.) con salvaguardas contractuales y medidas de
-          seguridad de proveedores.
+          Establecidos en {e.country}. Los datos pueden procesarse en EE. UU. y otros países donde operan subencargados.
+          Usamos salvaguardas contractuales (incluidas cláusulas tipo SCC cuando aplique) y compromisos de seguridad de
+          proveedores.
+        </p>
+      </section>
+
+      <section id="menores">
+        <h2>Menores</h2>
+        <p>
+          El Servicio no está dirigido a menores de 16 años (13 en EE. UU. sin consentimiento parental verificable). Los
+          clientes no deben usar Desk para recoger datos de menores de forma ilícita.
+        </p>
+      </section>
+
+      <section id="cambios">
+        <h2>Cambios</h2>
+        <p>
+          Podemos actualizar esta Política. Publicaremos la fecha de revisión y, si el cambio es material, avisaremos a
+          administradores por correo o aviso en producto. El uso continuado tras el aviso implica aceptación cuando la
+          ley lo permita.
         </p>
       </section>
 

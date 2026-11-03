@@ -3,6 +3,8 @@ import { MarketingShell } from "@/components/marketing-shell";
 import { MarketingHero } from "@/components/marketing-hero";
 import { PlanFeatureTable } from "@/components/plan-feature-table";
 import { ProductPanelPreview } from "@/components/product-panel-preview";
+import { KnowledgeDocumentsPreview } from "@/components/knowledge-documents-preview";
+import { InboxMarketingPreview } from "@/components/inbox-marketing-preview";
 import { DataFlowPreview } from "@/components/data-flow-preview";
 import {
   planFeatureMatrix,
@@ -71,8 +73,21 @@ export default function PlataformaPage() {
 
       <section className="mx-auto max-w-6xl px-6 py-14">
         <h2 className="font-display text-2xl">Del catálogo al pago (o a tu bandeja) en el mismo chat</h2>
-        <div className="mt-8">
+        <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <DataFlowPreview />
+          <InboxMarketingPreview />
+        </div>
+      </section>
+
+      <section className="border-y border-[var(--border)] bg-[var(--muted-bg)]/30">
+        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-14 lg:grid-cols-2 lg:items-start">
+          <KnowledgeDocumentsPreview />
+          <div className="lg:pt-6">
+            <h2 className="font-display text-2xl">Biblioteca de conocimiento</h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+              La misma pantalla Conocimiento del panel: subes PDFs, ves estado de indexación y editas títulos.
+            </p>
+          </div>
         </div>
       </section>
 

@@ -6,7 +6,7 @@
 
 - **12 000** mensajes de tus clientes
 - **120 000** créditos de procesamiento
-- **10** usuarios en el panel · **5** asistentes (marca, línea o país)
+- **10** usuarios en el panel
 - **40** documentos de conocimiento
 - Integraciones y automatizaciones ampliadas
 - Historial **60 días**

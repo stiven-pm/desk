@@ -16,7 +16,7 @@ Si se agota uno, el chat devuelve **429** (`usage_messages_exceeded` o `usage_cr
 
 **Persistencia visitante:** `visitorId` + `conversationId` en `localStorage`; al volver o recargar, `POST /v1/public/sessions` reanuda si hubo actividad en las últimas **24 h** (máx. **7 días** de antigüedad). Tras **72 h** sin mensajes, cron cierra chats `automated` (`phase=closed`). Constantes en `packages/domain/src/visitor-session.ts`.
 
-**Fecha/hora en respuestas:** geo Cloudflare + ip.guide / ipquery.io → bloque “Contexto de sesión” en el system prompt (`visitor-geo.ts`).
+**Fecha/hora en respuestas:** datos aproximados de red en el borde Cloudflare (p. ej. país/ciudad) → bloque “Contexto de sesión” en el system prompt (`visitor-geo.ts`). Sin servicios externos de geolocalización por IP.
 
 Marketing y panel deben decir **mensajes de cliente**, no “conversaciones”, salvo que en el futuro cambiemos el contador.
 
