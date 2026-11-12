@@ -9,6 +9,9 @@ Public URLs (after deploy to production):
 | Legal hub | — | https://desk.rekov.co/legal |
 | Cookies | https://desk.rekov.co/legal/cookies | — |
 | DMCA | https://desk.rekov.co/legal/dmca | — |
+| Disponibilidad (sin SLA self-serve) | — | https://desk.rekov.co/legal/disponibilidad |
+| DPA (B2B, web) | — | https://desk.rekov.co/legal/dpa |
+| FAQ compradores (pagos, créditos, IA) | — | https://desk.rekov.co/preguntas |
 
 ## Meta Developers — mandatory app settings
 
@@ -40,9 +43,36 @@ Nota: registro e inicio de sesión en Desk (`/register`, `/login`) exigen **acep
 ## Entity (public copy)
 
 - **Legal name:** Rekov Systems S.A.S. (Colombia)
+- **NIT:** `902122807-2` — `LEGAL_ENTITY.taxId` en `entity.ts`; hub legal y cabecera de políticas
 - **Product:** Desk
 - **Contact:** contact@rekov.co · privacy@rekov.co · security@rekov.co
-- Tax ID (NIT) is **not** required in privacy/terms for Meta; add to invoices and RUES-facing forms separately.
+- Representante legal y domicilio **no** van al sitio (solo email de contacto).
+
+## Creem (factura al cliente — no es código Desk)
+
+**Creem** es quien cobra la tarjeta y emite el recibo/comprobante que ve el comprador. Desk solo abre el checkout (`POST /v1/admin/billing/checkout`) y activa la org cuando Creem confirma el pago.
+
+En el **panel de Creem** (tienda `desk`, modo test y live), configura los datos del comercio para que el recibo muestre la misma identidad que el sitio:
+
+| Campo en Creem | Valor |
+|----------------|--------|
+| Razón social / legal name | Rekov Systems S.A.S. |
+| NIT / tax ID | 902122807-2 |
+| País | Colombia |
+| URL del sitio | https://desk.rekov.co |
+
+Desk **no** puede inyectar el NIT en el PDF de Creem desde el Worker; si el recibo sale mal, se corrige en Creem, no en `packages/`.
+
+Ver también `docs/CREEM.md` y `docs/CREEM_AND_PRICING.md`.
+
+## Legal go-live (prod)
+
+1. Commitear y desplegar dashboard + API (`npm run desk:deploy:prod` aplica migraciones D1 remotas, incl. `0052_user_terms_acceptance.sql`).
+2. Smoke: `/legal`, `/legal/dpa`, `/legal/disponibilidad`, `/terminos`, `/privacidad` → 200.
+3. Creem live: razón social + NIT en merchant; precios 99 / 199 / 589 en productos.
+4. Buzones `privacy@` y `security@` (alias OK).
+5. **Email onboarding:** tras primer pago de plan, `sendOnboardingWelcomeEmail` (Cloudflare Email Sending + `DESK_FROM_EMAIL`). Copia interna a `DESK_ONBOARDING_NOTIFY_EMAIL` (default `contact@rekov.co`). Idempotente vía `audit_log.onboarding_welcome_sent`.
+6. **Créditos compensación:** Ops `POST /v1/ops/orgs/:orgId/wallet/grant` con `kind: "service_credit"` y `note` (impacto); política pública en `/legal/disponibilidad`.
 
 ## Source of truth in code
 

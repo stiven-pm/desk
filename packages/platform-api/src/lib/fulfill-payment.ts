@@ -145,7 +145,7 @@ export async function applySubscriptionPayment(
   const upgraded = wasActive && org.plan_slug !== planSlug;
 
   await env.DB.prepare(
-    `UPDATE orgs SET status = 'active', plan_slug = ? WHERE id = ?`,
+    `UPDATE orgs SET status = 'active', plan_slug = ?, trial_ends_at = NULL WHERE id = ?`,
   )
     .bind(planSlug, input.orgId)
     .run();

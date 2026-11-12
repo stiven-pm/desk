@@ -186,15 +186,21 @@ export function registerOpsRoutes(app: Hono<AppEnv>): void {
   app.post("/v1/ops/orgs/:orgId/wallet/grant", async (c) => {
     const auth = await requireOps(c.req.raw, c.env);
     if ("response" in auth) return auth.response;
-    const body = (await c.req.json()) as { credits?: number; note?: string };
+    const body = (await c.req.json()) as {
+      credits?: number;
+      note?: string;
+      kind?: string;
+    };
     const credits = Number(body.credits);
     if (!Number.isFinite(credits) || credits <= 0 || credits > 5_000_000) {
       return apiError("invalid_body", 400);
     }
+    const kind =
+      body.kind === "service_credit" ? "service_credit" : "ops_grant";
     await creditWallet(c.env, {
       orgId: c.req.param("orgId"),
       credits: Math.floor(credits),
-      kind: "ops_grant",
+      kind,
       meta: { note: body.note ?? "", by: auth.user.email },
     });
     return json({ ok: true });

@@ -166,6 +166,15 @@ export function PrivacyPolicyEn() {
           Uploaded images, PDFs, and videos may be parsed or transcribed to extract text for search and replies;
           binary files remain stored under the Customer&apos;s retention policy.
         </p>
+        <p className="mt-3">
+          <strong>AI provider.</strong> Inference and document search run on{" "}
+          <strong>Cloudflare Workers AI</strong> and related Cloudflare infrastructure (subprocessor). We may change
+          models or comparable Cloudflare-hosted providers with reasonable notice. We do not train public foundation
+          models on your conversations or uploads.
+        </p>
+        <p className="mt-3">
+          Buyer FAQ: <a href="/preguntas#ia-proveedor">/preguntas#ia-proveedor</a>.
+        </p>
       </section>
 
       <section id="share">

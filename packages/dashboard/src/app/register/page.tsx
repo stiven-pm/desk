@@ -1,24 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { PLAN_MARKETING, type PlanSlug } from "@chatbot/domain";
+import { TRIAL_MARKETING_LINE } from "@chatbot/domain";
 import {
   detectBrowserOrgTimezone,
   OrgTimezoneSelect,
 } from "@/components/org-timezone-select";
-import { CheckoutRedirect } from "@/components/checkout-redirect";
 import { MarketingShell } from "@/components/marketing-shell";
 import { api } from "@/lib/api";
-import { redirectToBillingCheckout } from "@/lib/billing-checkout";
 import { publicApi } from "@/lib/public-api";
 import { PasswordField } from "@/components/password-field";
 
 function RegisterForm() {
   const router = useRouter();
-  const params = useSearchParams();
-  const plan = (params.get("plan") as PlanSlug | null) ?? "starter";
   const [signupsOpen, setSignupsOpen] = useState<boolean | null>(null);
   const [orgName, setOrgName] = useState("");
   const [timezone, setTimezone] = useState("America/Bogota");
@@ -27,7 +23,6 @@ function RegisterForm() {
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [openingCheckout, setOpeningCheckout] = useState(false);
 
   useEffect(() => {
     setTimezone(detectBrowserOrgTimezone());
@@ -62,25 +57,12 @@ function RegisterForm() {
         }),
       });
       localStorage.setItem("token", data.token);
-      setOpeningCheckout(true);
-      try {
-        const went = await redirectToBillingCheckout(plan);
-        if (went) return;
-      } catch {
-        /* fallback: plan picker with session chrome */
-      }
-      setOpeningCheckout(false);
-      router.push(`/onboarding/plan?plan=${encodeURIComponent(plan)}`);
+      router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo crear la cuenta");
     } finally {
       setLoading(false);
     }
-  }
-
-  if (openingCheckout) {
-    const label = PLAN_MARKETING.find((p) => p.slug === plan)?.name ?? plan;
-    return <CheckoutRedirect planLabel={label} />;
   }
 
   if (signupsOpen === null) {
@@ -107,10 +89,6 @@ function RegisterForm() {
       onSubmit={submit}
       className="space-y-4 rounded-xl border border-[var(--border)] bg-[var(--card)] p-6"
     >
-      <p className="text-sm text-[var(--muted)]">
-        Plan sugerido: <strong className="capitalize text-[var(--foreground)]">{plan}</strong>.
-        Después crearás la cuenta y en el siguiente paso irás al pago en Creem.
-      </p>
       <label className="block text-sm">
         Nombre de la empresa
         <input
@@ -195,9 +173,8 @@ export default function RegisterPage() {
     <MarketingShell>
       <div className="mx-auto max-w-md px-6 py-16">
         <h1 className="text-2xl font-semibold">Crear cuenta Desk</h1>
+        <p className="mt-2 text-sm text-[var(--muted)]">{TRIAL_MARKETING_LINE}</p>
         <p className="mt-2 text-sm opacity-70">
-          <Link href="/pricing" className="underline">Cambiar plan</Link>
-          {" · "}
           <Link href="/login" className="underline">Entrar</Link>
         </p>
         <div className="mt-8">

@@ -68,6 +68,8 @@ export interface Env {
   OPS_BOOTSTRAP_ADMIN_EMAILS?: string;
   OPS_BOOTSTRAP_PASSWORD?: string;
   DESK_FROM_EMAIL?: string;
+  /** Inbox for new-customer activation alerts (default contact@rekov.co). */
+  DESK_ONBOARDING_NOTIFY_EMAIL?: string;
   EMAIL?: SendEmail;
   /** When true, skip email OTP step after password (dev/test only). */
   LOGIN_OTP_SKIP?: string;

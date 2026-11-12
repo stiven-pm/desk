@@ -24,6 +24,7 @@ import {
   type VisitorStateBarChoice,
   type VisitorTurnKind,
   RAG_METERING_CREDITS_PER_MESSAGE,
+  orgServiceActive,
 } from "@chatbot/domain";
 import {
   RAG_CHUNK_MAX_CHARS,
@@ -1109,10 +1110,10 @@ export class ConversationDO extends DurableObject<ConversationEnv> {
     const db = this.env.DB;
     if (!db || !this.orgId) return null;
     const org = await db
-      .prepare(`SELECT plan_slug, status FROM orgs WHERE id = ?`)
+      .prepare(`SELECT plan_slug, status, trial_ends_at FROM orgs WHERE id = ?`)
       .bind(this.orgId)
-      .first<{ plan_slug: string; status: string }>();
-    if (!org || org.status !== "active") return "org_inactive";
+      .first<{ plan_slug: string; status: string; trial_ends_at: string | null }>();
+    if (!org || !orgServiceActive(org.status, org.trial_ends_at)) return "org_inactive";
     const check = await assertOrgUsage(db, this.orgId, planFromSlug(org.plan_slug), {
       messages: 1,
       credits: 0,

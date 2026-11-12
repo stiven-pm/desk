@@ -120,6 +120,15 @@ export function PrivacyPolicyEs() {
           contener errores. Debes informar cuando corresponda (incluidas expectativas tipo FTC en EE. UU.). Imágenes,
           PDF y video se pueden analizar para extraer texto útil; los archivos se conservan según tu plan.
         </p>
+        <p className="mt-3">
+          <strong>Proveedor de IA.</strong> La inferencia y la búsqueda en documentos se ejecutan en{" "}
+          <strong>Cloudflare Workers AI</strong> y almacenamiento asociado en infra Cloudflare (subencargado).
+          Podemos cambiar modelos o proveedores equivalentes en Cloudflare con aviso razonable; no entrenamos modelos
+          fundacionales públicos con tus conversaciones ni documentos.
+        </p>
+        <p className="mt-3">
+          Más preguntas de evaluación: <a href="/preguntas#ia-proveedor">/preguntas#ia-proveedor</a>.
+        </p>
       </section>
 
       <section id="compartimos">

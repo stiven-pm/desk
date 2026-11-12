@@ -1,4 +1,6 @@
-export type PlanSlug = "starter" | "growth" | "business";
+export type PlanSlug = "trial" | "starter" | "growth" | "business";
+
+export type PaidPlanSlug = Exclude<PlanSlug, "trial">;
 
 export interface PlanLimits {
   slug: PlanSlug;
@@ -23,6 +25,21 @@ export interface PlanLimits {
  * Planes diferencian **volumen y escala** (mensajes, créditos, equipo, integraciones).
  */
 export const PLAN_LIMITS: Record<PlanSlug, PlanLimits> = {
+  trial: {
+    slug: "trial",
+    monthlyAiCredits: 8_000,
+    monthlyMessages: 400,
+    maxSeats: 1,
+    maxRagSources: 5,
+    maxOriginsPerBot: 1,
+    maxHttpToolsPerBot: 6,
+    maxMcpServersPerBot: 1,
+    maxMcpToolsMaterializedPerBot: 32,
+    maxConnectorsPerBot: 2,
+    maxOrgWebhooks: 1,
+    logRetentionDays: 14,
+    enterpriseShell: false,
+  },
   starter: {
     slug: "starter",
     monthlyAiCredits: 50_000,
@@ -75,8 +92,14 @@ export function planAllowsEnterpriseShell(limits: PlanLimits): boolean {
 }
 
 export function planFromSlug(slug: string): PlanSlug {
-  if (slug === "starter" || slug === "growth" || slug === "business") return slug;
+  if (slug === "trial" || slug === "starter" || slug === "growth" || slug === "business") {
+    return slug;
+  }
   return "starter";
+}
+
+export function isPaidPlanSlug(slug: string): slug is PaidPlanSlug {
+  return slug === "starter" || slug === "growth" || slug === "business";
 }
 
 /** Integraciones en vivo (HTTP, MCP, conectores) — disponibles en todos los planes (límites numéricos en PLAN_LIMITS). */

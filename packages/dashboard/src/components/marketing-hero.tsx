@@ -47,6 +47,7 @@ export function MarketingHero({
   secondaryLabel,
   stats,
   aside,
+  footnote,
 }: {
   eyebrow: string;
   title: string;
@@ -57,6 +58,7 @@ export function MarketingHero({
   secondaryLabel?: string;
   stats?: MarketingHeroStat[];
   aside?: React.ReactNode;
+  footnote?: string;
 }) {
   const withVisual = Boolean(aside);
 
@@ -105,6 +107,15 @@ export function MarketingHero({
               </Link>
             )}
           </div>
+          {footnote ? (
+            <p
+              className={`max-w-xl text-[var(--desk-muted)] ${
+                withVisual ? "mt-3 text-xs leading-relaxed" : "mt-4 text-sm leading-relaxed"
+              }`}
+            >
+              {footnote}
+            </p>
+          ) : null}
           {stats && stats.length > 0 && withVisual && (
             <HeroStats stats={stats} compact />
           )}

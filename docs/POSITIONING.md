@@ -23,7 +23,8 @@ No vendemos “IA generativa”. Vendemos **menos interrupciones al equipo** con
 |---|----|-----|
 | Canales | Chat web hosted, enlace, widget iframe | WhatsApp, voz, Instagram DM operados por Desk |
 | Precio | Plan mensual publicado (Starter / Growth / Business) | Pago por resolución opaco tipo Intercom Fin |
-| Datos | PDFs, RAG, HTTP/MCP/conectores (límites por plan) | “Conecto tu ERP en un clic” sin trabajo del cliente |
+| Datos | PDFs, RAG, HTTP/MCP/conectores; **setup inicial** en todos los planes | ERP mágico sin API ni credenciales del cliente |
+| Disponibilidad | Best effort; infra principal **Cloudflare** | SLA de uptime en self-serve |
 | Tienda | Checkout nativo Desk + tools `commerce_*` | Reemplazar Shopify/Woo por completo |
 | Catálogo | Tools + UI `desk-ui` + host en web del cliente | **Panel catálogo nativo** (productos/SKU en Desk) — **pendiente P0** |
 | Exceso de cupo | Upgrade plan + wallet créditos (código listo; Creem one-time en prod) | Cobro automático silencioso por mensaje extra |

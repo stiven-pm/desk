@@ -1,8 +1,10 @@
 import { LEGAL_TERMS_VERSION } from "@chatbot/domain";
 
-/** Public legal identity — no tax ID in customer-facing copy. */
+/** Public legal identity for policies, hub legal and receipts cross-reference. */
 export const LEGAL_ENTITY = {
   legalName: "Rekov Systems S.A.S.",
+  /** Colombian tax ID — also configured in Creem merchant profile for checkout receipts. */
+  taxId: "902122807-2",
   productName: "Desk",
   brand: "Rekov",
   country: "Colombia",

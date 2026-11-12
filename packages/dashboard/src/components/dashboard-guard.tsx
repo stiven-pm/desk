@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { orgServiceActive } from "@chatbot/domain";
 import { api } from "@/lib/api";
 import { DashboardTopNav } from "@/components/dashboard-top-nav";
 import { DashboardSettingsHeader } from "@/components/dashboard-settings-header";
@@ -18,7 +20,19 @@ import {
 } from "@/lib/member-access-ui";
 import type { MemberCapability } from "@chatbot/domain";
 
-type OrgState = { status: string; plan_slug: string; name?: string };
+type OrgState = {
+  status: string;
+  plan_slug: string;
+  name?: string;
+  trial_ends_at?: string | null;
+};
+
+function formatTrialEnd(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" });
+}
 
 export function DashboardGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -27,7 +41,10 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<MePayload | null>(null);
   const [ready, setReady] = useState(false);
 
-  const active = org?.status === "active";
+  const serviceActive = org
+    ? orgServiceActive(org.status, org.trial_ends_at ?? null)
+    : false;
+  const onTrial = org?.status === "trial" && serviceActive;
   const isSettings = pathname === "/dashboard/configuracion";
 
   useEffect(() => {
@@ -47,8 +64,10 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
           email: d.user?.email,
         });
         const allowedInactive =
-          pathname === "/dashboard" || pathname === "/dashboard/configuracion";
-        if (d.org?.status !== "active" && !allowedInactive) {
+          pathname === "/dashboard" ||
+          pathname === "/dashboard/configuracion" ||
+          pathname === "/dashboard/billing";
+        if (!orgServiceActive(d.org?.status, d.org?.trial_ends_at ?? null) && !allowedInactive) {
           router.replace("/dashboard");
         }
       })
@@ -60,11 +79,29 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
   }, [pathname, router]);
 
   useEffect(() => {
-    if (!member || !pathname || !active) return;
+    if (!member || !pathname || !serviceActive) return;
     if (!routeAllowed(member, pathname)) {
       router.replace(defaultPanelHome(member));
     }
-  }, [member, pathname, active, router]);
+  }, [member, pathname, serviceActive, router]);
+
+  const trialBanner = onTrial ? (
+    <p className="border-b border-[var(--border)] bg-amber-50 px-4 py-2 text-center text-xs text-amber-950 sm:px-6">
+      Prueba hasta {formatTrialEnd(org?.trial_ends_at)}.{" "}
+      <Link href="/dashboard/billing" className="underline underline-offset-2">
+        Activar plan
+      </Link>
+    </p>
+  ) : null;
+
+  const pendingBanner = !serviceActive ? (
+    <p className="border-b border-[var(--border)] bg-amber-50 px-4 py-2 text-center text-xs text-amber-950 sm:px-6">
+      {org?.status === "pending" ? "Tu prueba terminó." : "Activa tu plan para usar el chat."}{" "}
+      <Link href="/dashboard/billing" className="underline underline-offset-2">
+        Elegir plan
+      </Link>
+    </p>
+  ) : null;
 
   if (!ready) {
     return (
@@ -79,27 +116,26 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
         {isSettings ? (
           <>
             <DashboardSettingsHeader />
-            {!active ? (
-              <p className="border-b border-[var(--border)] bg-amber-50 px-4 py-2 text-center text-xs text-amber-950 sm:px-6">
-                Activa tu plan para usar el chat y vender.{" "}
-                <a href="mailto:contact@rekov.co" className="underline underline-offset-2">
-                  contact@rekov.co
-                </a>
-              </p>
-            ) : null}
+            {trialBanner}
+            {pendingBanner}
           </>
-        ) : active ? (
-          <DashboardTopNav />
+        ) : serviceActive ? (
+          <>
+            <DashboardTopNav />
+            {trialBanner}
+          </>
         ) : (
-          <header className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--muted-bg)]/50 px-4 py-2.5 sm:px-6">
-            <p className="text-sm text-[var(--muted)]">
-              Elige un plan para usar Desk.{" "}
-              <a href="mailto:contact@rekov.co" className="underline underline-offset-2">
-                contact@rekov.co
-              </a>
-            </p>
-            <DashboardProfileMenu />
-          </header>
+          <>
+            <header className="flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--muted-bg)]/50 px-4 py-2.5 sm:px-6">
+              <p className="text-sm text-[var(--muted)]">
+                <Link href="/dashboard/billing" className="underline underline-offset-2">
+                  Elegir plan
+                </Link>
+              </p>
+              <DashboardProfileMenu />
+            </header>
+            {pendingBanner}
+          </>
         )}
         {children}
       </div>

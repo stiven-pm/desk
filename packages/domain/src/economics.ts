@@ -2,7 +2,7 @@
  * Planificación COGS Rekov — **nunca** exponer a tenants (solo Ops auth + docs internos).
  * Clientes ven precio del plan y cupos en marketing/billing, no margen ni coste Cloudflare.
  */
-import type { PlanSlug } from "./plans";
+import type { PaidPlanSlug, PlanSlug } from "./plans";
 import { PLAN_LIMITS, planFromSlug } from "./plans";
 import { PLAN_MARKETING } from "./marketing";
 import { RAG_METERING_CREDITS_PER_MESSAGE } from "./usage-metering";
@@ -23,14 +23,14 @@ export const ECONOMICS_USD_PER_1K_CREDITS = {
 } as const;
 
 /** Fixed infra + payment processing per org / month (planning). */
-export const ECONOMICS_FIXED_USD_PER_ORG: Record<PlanSlug, number> = {
+export const ECONOMICS_FIXED_USD_PER_ORG: Record<PaidPlanSlug, number> = {
   starter: 4.5,
   growth: 13,
   business: 40,
 };
 
 /** Vectorize + plataforma compartida (planning stress), USD/mes por org. */
-export const STRESS_VECTORIZE_USD_PER_ORG: Record<PlanSlug, number> = {
+export const STRESS_VECTORIZE_USD_PER_ORG: Record<PaidPlanSlug, number> = {
   starter: 15,
   growth: 40,
   business: 120,
@@ -56,13 +56,14 @@ export const WALLET_CREDIT_PACKS = {
 export type WalletPackId = keyof typeof WALLET_CREDIT_PACKS;
 
 /** Suggested seat add-on USD/mes (not wired to Creem yet). */
-export const SEAT_ADDON_USD: Record<PlanSlug, number | null> = {
+export const SEAT_ADDON_USD: Record<PaidPlanSlug, number | null> = {
   starter: null,
   growth: 12,
   business: 8,
 };
 
 export function planRetailUsd(slug: PlanSlug): number {
+  if (slug === "trial") return 0;
   return PLAN_MARKETING.find((p) => p.slug === slug)?.priceUsd ?? 0;
 }
 
@@ -107,8 +108,8 @@ export function estimatePlanStressMarginUsd(slug: PlanSlug): {
   const mrrUsd = planRetailUsd(plan);
   const stressMessages = stressVisitorMessagesBeforeCreditCap(plan);
   const llmUsd = stressMessages * STRESS_LLM_USD_PER_VISITOR_MESSAGE;
-  const vectorizeUsd = STRESS_VECTORIZE_USD_PER_ORG[plan];
-  const fixedUsd = ECONOMICS_FIXED_USD_PER_ORG[plan];
+  const vectorizeUsd = STRESS_VECTORIZE_USD_PER_ORG[plan as PaidPlanSlug] ?? STRESS_VECTORIZE_USD_PER_ORG.starter;
+  const fixedUsd = ECONOMICS_FIXED_USD_PER_ORG[plan as PaidPlanSlug] ?? ECONOMICS_FIXED_USD_PER_ORG.starter;
   const creemUsd = creemFeeUsd(mrrUsd);
   const cost = llmUsd + vectorizeUsd + fixedUsd + creemUsd;
   const grossUsd = mrrUsd - cost;
@@ -126,7 +127,7 @@ export function estimatePlanStressMarginUsd(slug: PlanSlug): {
 }
 
 export const PLAN_STRESS_MARGINS: Record<
-  PlanSlug,
+  PaidPlanSlug,
   ReturnType<typeof estimatePlanStressMarginUsd>
 > = {
   starter: estimatePlanStressMarginUsd("starter"),
@@ -156,7 +157,10 @@ export function estimateOrgGrossMarginUsd(
   const slug = planFromSlug(u.planSlug);
   const mrrUsd = planRetailUsd(slug);
   const variableUsd = estimateVariableCostUsd(u, band);
-  const fixedUsd = ECONOMICS_FIXED_USD_PER_ORG[slug];
+  const fixedUsd =
+    slug === "trial"
+      ? ECONOMICS_FIXED_USD_PER_ORG.starter
+      : ECONOMICS_FIXED_USD_PER_ORG[slug];
   const creemUsd = creemFeeUsd(mrrUsd);
   const cost = variableUsd + fixedUsd + creemUsd;
   const grossUsd = mrrUsd - cost;

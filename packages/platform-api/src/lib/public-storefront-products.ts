@@ -1,3 +1,4 @@
+import { orgServiceActive } from "@chatbot/domain";
 import type { Env } from "../types";
 
 export type PublicStorefrontProduct = {
@@ -22,12 +23,14 @@ export async function listPublishedProductsForOrgSlug(
   | { ok: false; error: "not_found" | "inactive" }
 > {
   const org = await env.DB.prepare(
-    `SELECT id, status FROM orgs WHERE slug = ?`,
+    `SELECT id, status, trial_ends_at FROM orgs WHERE slug = ?`,
   )
     .bind(orgSlug)
-    .first<{ id: string; status: string }>();
+    .first<{ id: string; status: string; trial_ends_at: string | null }>();
   if (!org) return { ok: false, error: "not_found" };
-  if (org.status !== "active") return { ok: false, error: "inactive" };
+  if (!orgServiceActive(org.status, org.trial_ends_at)) {
+    return { ok: false, error: "inactive" };
+  }
 
   const rows = await env.DB.prepare(
     `SELECT id, name, description, price_cents, compare_at_price_cents, promo_label,

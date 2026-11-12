@@ -69,7 +69,7 @@ export const platformModules = [
   },
   {
     title: "Conectado a lo que ya usas",
-    body: "ERP, tienda, CRM: sin reemplazar tu stack, sí quitándole fricción al cliente.",
+    body: "ERP, tienda o API propia — setup inicial incluido en cualquier plan; conexión personalizada por empresa.",
     tags: ["Integraciones"],
   },
   {
@@ -125,6 +125,12 @@ export const planFeatureMatrix: PlanFeatureRow[] = [
     starter: `${PLAN_LIMITS.starter.logRetentionDays} días`,
     growth: `${PLAN_LIMITS.growth.logRetentionDays} días`,
     business: `${PLAN_LIMITS.business.logRetentionDays} días`,
+  },
+  {
+    label: "Setup inicial con tus sistemas",
+    starter: true,
+    growth: true,
+    business: true,
   },
   {
     label: "Acciones a tus sistemas",

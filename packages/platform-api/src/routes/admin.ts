@@ -4,6 +4,8 @@ import {
   planFromSlug,
   PLAN_MARKETING,
   type PlanSlug,
+  type PaidPlanSlug,
+  isPaidPlanSlug,
   updateBotBodySchema,
 } from "@chatbot/domain";
 import type { AppEnv } from "../types";
@@ -42,7 +44,7 @@ export function registerAdminRoutes(app: Hono<AppEnv>): void {
     const auth = await requireUser(c.req.raw, c.env);
     if ("response" in auth) return auth.response;
     const org = await c.env.DB.prepare(
-      `SELECT id, name, slug, plan_slug, status FROM orgs WHERE id = ?`,
+      `SELECT id, name, slug, plan_slug, status, trial_ends_at FROM orgs WHERE id = ?`,
     )
       .bind(auth.user.orgId)
       .first();
@@ -490,7 +492,9 @@ export function registerAdminRoutes(app: Hono<AppEnv>): void {
     const auth = await requireUser(c.req.raw, c.env);
     if ("response" in auth) return auth.response;
     const body = (await c.req.json()) as { plan?: string };
-    const plan = planFromSlug(body.plan ?? "starter");
+    const raw = body.plan ?? "starter";
+    if (!isPaidPlanSlug(raw)) return apiError("invalid_body", 400);
+    const plan: PaidPlanSlug = raw;
     const productId = resolveCreemProductId(c.env, plan);
     if (!productId) return apiError("billing_not_configured", 503);
 

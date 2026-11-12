@@ -5,6 +5,7 @@ import {
   resolveMemberCapabilities,
   resolveOrgTimezone,
   LEGAL_TERMS_VERSION,
+  trialEndsAtIso,
 } from "@chatbot/domain";
 import type { AppEnv, Env } from "../types";
 import {
@@ -69,6 +70,7 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
     const botId = randomId();
     const pub = generateApiKey("publishable");
     const sec = generateApiKey("secret");
+    const trialEnds = trialEndsAtIso();
 
     await c.env.DB.batch([
       c.env.DB.prepare(
@@ -76,8 +78,9 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
          VALUES (?, ?, ?, ?, datetime('now'))`,
       ).bind(userId, email, passwordHash, LEGAL_TERMS_VERSION),
       c.env.DB.prepare(
-        `INSERT INTO orgs (id, name, slug, status, period_start, timezone) VALUES (?, ?, ?, 'pending', ?, ?)`,
-      ).bind(orgId, orgName, slug, period, orgTimezone),
+        `INSERT INTO orgs (id, name, slug, plan_slug, status, period_start, timezone, trial_ends_at)
+         VALUES (?, ?, ?, 'trial', 'trial', ?, ?, ?)`,
+      ).bind(orgId, orgName, slug, period, orgTimezone, trialEnds),
       c.env.DB.prepare(
         `INSERT INTO memberships (org_id, user_id, role) VALUES (?, ?, 'owner')`,
       ).bind(orgId, userId),
@@ -92,6 +95,9 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
     await persistDefaultApiKeys(c.env, orgId, botId, pub.token, sec.token);
     await ensureDeskHostedOrigin(c.env, botId);
 
+    const { sendTrialStartedEmail } = await import("../lib/onboarding-email");
+    void sendTrialStartedEmail(c.env, orgId);
+
     const token = await createSessionToken(
       { id: userId, email, scope: "tenant", orgId, role: "owner" },
       c.env.JWT_SECRET,
@@ -99,7 +105,7 @@ export function registerAuthRoutes(app: Hono<AppEnv>): void {
 
     return json({
       token,
-      org: { id: orgId, slug, status: "pending" },
+      org: { id: orgId, slug, status: "trial", trialEndsAt: trialEnds, plan_slug: "trial" },
       defaultBotId: botId,
       apiKeys: {
         publishable: pub.token,

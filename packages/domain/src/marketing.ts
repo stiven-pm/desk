@@ -13,7 +13,16 @@ export interface PlanMarketing {
 }
 
 export const PRICING_PRODUCT_LINE =
-  "Menos consultas repetidas en tu web: IA con tus documentos, checkout cuando aplica e integraciones opcionales — precio mensual fijo.";
+  "Menos consultas repetidas en tu web: IA con tus documentos, checkout cuando aplica e integración a tus sistemas con setup inicial en todos los planes — precio mensual fijo.";
+
+export const INTEGRATIONS_SETUP_LINE =
+  "Cada empresa conecta sus propios sistemas (API, MCP, conectores o tienda Desk). Incluimos setup inicial en Starter, Growth y Business hasta dejar operativa la primera conexión acordada contigo.";
+
+export const AVAILABILITY_LINE =
+  "Disponibilidad en best effort: sin SLA de uptime en planes estándar; el servicio depende principalmente de Cloudflare (Workers, D1, Workers AI).";
+
+export const SERVICE_CREDIT_LINE =
+  "Si un incidente nuestro te afectó de forma relevante, podemos acreditar créditos de wallet a criterio de Rekov (impacto, duración, historial) — no hay tabla automática en self-serve; enterprise puede pactar reglas por escrito.";
 
 export const TEAM_SEATS_LINE =
   "Asientos de panel incluidos: admins configuran; agentes solo bandeja y métricas.";
@@ -39,6 +48,7 @@ export const PLAN_MARKETING: PlanMarketing[] = [
       "Un negocio con consultas de pedidos, stock o horarios que hoy caen en WhatsApp o correo.",
     highlights: [
       msgHighlight("starter"),
+      "Setup inicial de integración con tu stack",
       `${PLAN_LIMITS.starter.monthlyAiCredits.toLocaleString("es")} créditos de procesamiento incluidos`,
       seatHighlight("starter"),
       `Hasta ${PLAN_LIMITS.starter.maxRagSources} documentos para entrenar la IA`,
@@ -55,6 +65,7 @@ export const PLAN_MARKETING: PlanMarketing[] = [
       "Equipos que ya usan el chat a diario y necesitan ERP, tienda o API en las respuestas.",
     highlights: [
       msgHighlight("growth"),
+      "Setup inicial de integración con tu stack",
       `${PLAN_LIMITS.growth.monthlyAiCredits.toLocaleString("es")} créditos de procesamiento`,
       seatHighlight("growth"),
       `Hasta ${PLAN_LIMITS.growth.maxRagSources} documentos para entrenar la IA`,
@@ -71,6 +82,7 @@ export const PLAN_MARKETING: PlanMarketing[] = [
       "Equipos grandes con mucho tráfico en el chat web y conexiones exigentes a su operación.",
     highlights: [
       msgHighlight("business"),
+      "Setup inicial de integración con tu stack",
       `${PLAN_LIMITS.business.monthlyAiCredits.toLocaleString("es")} créditos de procesamiento`,
       seatHighlight("business"),
       `Hasta ${PLAN_LIMITS.business.maxRagSources} documentos para entrenar la IA`,
@@ -99,7 +111,19 @@ export const PRICING_FAQ = [
   },
   {
     q: "¿Qué incluye el precio de Desk?",
-    a: "Chat web hosted, panel, bandeja humana, documentos para la IA, tienda/checkout Desk e integraciones según plan.",
+    a: "Chat web hosted, panel, bandeja humana, documentos para la IA, tienda/checkout Desk, integraciones según plan y setup inicial con tus sistemas en todos los planes.",
+  },
+  {
+    q: "¿Cómo funcionan las integraciones?",
+    a: INTEGRATIONS_SETUP_LINE,
+  },
+  {
+    q: "¿Hay SLA de disponibilidad?",
+    a: AVAILABILITY_LINE + " Detalle: /legal/disponibilidad. Uptime garantizado solo bajo contrato enterprise.",
+  },
+  {
+    q: "¿Compensan con créditos si hay caídas?",
+    a: SERVICE_CREDIT_LINE,
   },
   {
     q: "¿Enlace y widget son chats distintos?",

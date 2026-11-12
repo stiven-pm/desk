@@ -29,7 +29,8 @@ export function LegalProse({
       <h1 className="font-display text-3xl">{title}</h1>
       <p className="mt-3 text-sm text-[var(--muted)]">
         {lang === "en" ? "Last updated" : "Última actualización"}: {lastUpdated} ·{" "}
-        {LEGAL_ENTITY.legalName} ·{" "}
+        {LEGAL_ENTITY.legalName}
+        {LEGAL_ENTITY.taxId ? ` · NIT ${LEGAL_ENTITY.taxId}` : ""} ·{" "}
         <a href={`mailto:${LEGAL_ENTITY.contactEmail}`} className="underline">
           {LEGAL_ENTITY.contactEmail}
         </a>

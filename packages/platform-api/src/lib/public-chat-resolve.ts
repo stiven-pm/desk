@@ -1,3 +1,4 @@
+import { orgServiceActive } from "@chatbot/domain";
 import type { Env } from "../types";
 import { getPublishableKeyPlain } from "./publishable-key";
 import { widgetCdnBase } from "./bot-web-config";
@@ -23,7 +24,7 @@ export async function loadPublicChatByOrgSlug(
   | { ok: false; error: "not_found" | "inactive" | "publishable_key_missing" }
 > {
   const row = await env.DB.prepare(
-    `SELECT o.id AS org_id, o.name AS org_name, o.status, o.slug,
+    `SELECT o.id AS org_id, o.name AS org_name, o.status, o.trial_ends_at, o.slug,
             b.id AS bot_id, b.name AS bot_name, b.theme_css_url, b.welcome_message,
             b.idle_reply_message
      FROM orgs o
@@ -37,6 +38,7 @@ export async function loadPublicChatByOrgSlug(
       org_id: string;
       org_name: string;
       status: string;
+      trial_ends_at: string | null;
       slug: string;
       bot_id: string;
       bot_name: string;
@@ -46,7 +48,9 @@ export async function loadPublicChatByOrgSlug(
     }>();
 
   if (!row) return { ok: false, error: "not_found" };
-  if (row.status !== "active") return { ok: false, error: "inactive" };
+  if (!orgServiceActive(row.status, row.trial_ends_at)) {
+    return { ok: false, error: "inactive" };
+  }
 
   const publishableKey = await getPublishableKeyPlain(env, row.bot_id);
   if (!publishableKey) return { ok: false, error: "publishable_key_missing" };

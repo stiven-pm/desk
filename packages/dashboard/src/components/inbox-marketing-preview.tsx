@@ -6,7 +6,7 @@ const ASSISTANT_BUBBLE =
   "mr-auto max-w-[95%] w-fit rounded-lg border border-[#d8dcde] bg-white px-3 py-2 text-sm text-[#2f3941]";
 
 const QUEUE = [
-  { label: "Visitante a3f2…", summary: "¿Cuánto tarda la devolución?" },
+  { label: "Visitante a3f2…", summary: "En curso · devolución" },
   { label: "maria@tienda.co", summary: "Pidió un asesor" },
 ] as const;
 
@@ -47,7 +47,7 @@ export function InboxMarketingPreview({ compact = false }: { compact?: boolean }
               <h2 className="min-w-0 truncate text-base font-semibold text-[#2f3941]">
                 Visitante a3f2…
               </h2>
-              <span className="shrink-0 text-xs text-[#68737d]">Pendiente</span>
+              <span className="shrink-0 text-xs text-[#68737d]">En curso</span>
             </header>
             <div className="min-h-0 flex-1 space-y-3 overflow-hidden p-4">
               <div className={USER_BUBBLE}>¿Cuánto tarda la devolución?</div>
@@ -55,6 +55,9 @@ export function InboxMarketingPreview({ compact = false }: { compact?: boolean }
                 Según nuestra política, tienes 30 días… ¿Quieres que te pase con un agente?
               </div>
               <div className={USER_BUBBLE}>Sí, por favor</div>
+              <div className={ASSISTANT_BUBBLE}>
+                Hola, soy Laura del equipo. Reviso tu pedido y te confirmo el plazo de devolución.
+              </div>
             </div>
             <footer className="shrink-0 border-t border-[#d8dcde] p-3">
               <div className="flex flex-wrap gap-2">

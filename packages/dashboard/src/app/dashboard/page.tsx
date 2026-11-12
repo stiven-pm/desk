@@ -6,18 +6,19 @@ import { PlanCards } from "@/components/plan-cards";
 import { CheckoutRedirect } from "@/components/checkout-redirect";
 import { api } from "@/lib/api";
 import { redirectToBillingCheckout } from "@/lib/billing-checkout";
-import type { PlanSlug } from "@chatbot/domain";
+import type { PaidPlanSlug } from "@chatbot/domain";
+import { orgServiceActive } from "@chatbot/domain";
 
 function DashboardRoot() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const checkoutParam = searchParams.get("checkout") as PlanSlug | null;
+  const checkoutParam = searchParams.get("checkout") as PaidPlanSlug | null;
 
-  const [org, setOrg] = useState<{ status: string } | null>(null);
+  const [org, setOrg] = useState<{ status: string; trial_ends_at?: string | null } | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  async function checkout(plan: PlanSlug) {
+  async function checkout(plan: PaidPlanSlug) {
     setRedirecting(true);
     setCheckoutError(null);
     const went = await redirectToBillingCheckout(plan);
@@ -30,20 +31,20 @@ function DashboardRoot() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    api<{ org: { status: string } }>("/v1/admin/me", { token })
+    api<{ org: { status: string; trial_ends_at?: string | null } }>("/v1/admin/me", { token })
       .then((d) => setOrg(d.org))
       .catch(() => undefined);
   }, []);
 
   useEffect(() => {
     if (!org) return;
-    if (org.status === "active") {
+    if (orgServiceActive(org.status, org.trial_ends_at ?? null)) {
       router.replace("/dashboard/metrics");
       return;
     }
     if (checkoutParam && ["starter", "growth", "business"].includes(checkoutParam)) {
       setRedirecting(true);
-      void redirectToBillingCheckout(checkoutParam);
+      void redirectToBillingCheckout(checkoutParam as PaidPlanSlug);
     }
   }, [org, checkoutParam, router]);
 
@@ -59,7 +60,7 @@ function DashboardRoot() {
     );
   }
 
-  if (org.status === "active") {
+  if (org && orgServiceActive(org.status, org.trial_ends_at ?? null)) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-10 text-sm text-[var(--muted)]">
         Cargando…

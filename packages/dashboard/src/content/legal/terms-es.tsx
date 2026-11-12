@@ -1,4 +1,5 @@
 import { LEGAL_ENTITY } from "./entity";
+import { TRIAL_DURATION_DAYS } from "@chatbot/domain";
 
 export const termsNavEs = [
   { href: "#servicio", label: "Servicio" },
@@ -77,8 +78,10 @@ export function TermsOfServiceEs() {
         <h2>4. Planes, facturación y reembolsos</h2>
         <ul>
           <li>
-            El Servicio requiere un plan de pago activo desde el registro; no hay periodo de prueba gratuito ni uso del
-            panel sin suscripción.
+            Al registrarte puedes usar el Servicio durante {TRIAL_DURATION_DAYS} días de prueba con cupos reducidos
+            (sin tarjeta). Tras ese periodo, o si activas un plan de pago antes, rigen los límites del plan vigente.
+            Sin plan de pago activo al vencer la prueba, el chat de visitantes y las APIs operativas quedan suspendidos
+            hasta que elijas un plan.
           </li>
           <li>
             Los planes de pago se renuevan mensualmente hasta cancelación en el portal de facturación o aviso escrito

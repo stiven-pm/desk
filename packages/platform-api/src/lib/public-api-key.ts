@@ -1,3 +1,4 @@
+import { orgServiceActive } from "@chatbot/domain";
 import { authenticateApiKey } from "./api-key-auth";
 import { apiError } from "./http";
 import { isPublicOriginAllowed } from "./public-origin";
@@ -33,7 +34,7 @@ export async function requirePublishableBot(
 
   const bot = await getBotConfig(c.env, auth.botId);
   if (!bot) return { ok: false, response: apiError("not_found", 404) };
-  if (bot.orgStatus !== "active") {
+  if (!orgServiceActive(bot.orgStatus, bot.trialEndsAt)) {
     return { ok: false, response: apiError("org_inactive", 403) };
   }
 

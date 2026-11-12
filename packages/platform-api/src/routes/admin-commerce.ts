@@ -5,6 +5,7 @@ import {
   hasPaymentWebhookSecret,
   parseCommerceManifest,
   buildProductSearchText,
+  orgServiceActive,
 } from "@chatbot/domain";
 import type { AppEnv } from "../types";
 import { apiError, json, randomId } from "../lib/http";
@@ -103,9 +104,9 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
 
     const orgId = auth.user.orgId!;
     const [me, products, bot, paymentGatewayConnected] = await Promise.all([
-        c.env.DB.prepare(`SELECT status FROM orgs WHERE id = ?`)
+        c.env.DB.prepare(`SELECT status, trial_ends_at FROM orgs WHERE id = ?`)
           .bind(orgId)
-          .first<{ status: string }>(),
+          .first<{ status: string; trial_ends_at: string | null }>(),
         c.env.DB.prepare(`SELECT COUNT(*) AS n FROM products WHERE org_id = ?`)
           .bind(orgId)
           .first<{ n: number }>(),
@@ -139,7 +140,7 @@ export function registerAdminCommerceRoutes(app: Hono<AppEnv>): void {
     }
 
     return json({
-      subscriptionActive: me?.status === "active",
+      subscriptionActive: orgServiceActive(me?.status ?? "", me?.trial_ends_at ?? null),
       hasPersonalityInstructions: Boolean(bot?.system_prompt?.trim()),
       hasKnowledgeFiles,
       hasProducts: productCount > 0,

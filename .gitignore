@@ -17,3 +17,6 @@ packages/ops-dashboard/wrangler.toml
 *.local
 .DS_Store
 coverage/
+.agents/
+brag-output/
+brag-output-*/

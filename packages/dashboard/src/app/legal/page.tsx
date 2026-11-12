@@ -8,18 +8,36 @@ export default function LegalPage() {
       <article className="mx-auto max-w-3xl px-6 py-16 text-[15px] leading-relaxed">
         <h1 className="font-display text-3xl">Centro legal</h1>
         <p className="mt-4 text-[var(--muted)]">
-          Desk es operado por <strong>{LEGAL_ENTITY.legalName}</strong>, {LEGAL_ENTITY.country}. Cobros,
-          contratos y responsabilidad del Servicio recaen en esa sociedad. Contacto:{" "}
+          Desk es operado por <strong>{LEGAL_ENTITY.legalName}</strong>, {LEGAL_ENTITY.country}
+          {LEGAL_ENTITY.taxId ? (
+            <>
+              {" "}
+              (NIT <strong>{LEGAL_ENTITY.taxId}</strong>)
+            </>
+          ) : null}
+          . Cobros, contratos y responsabilidad del Servicio recaen en esa sociedad. Contacto:{" "}
           <a href={`mailto:${LEGAL_ENTITY.contactEmail}`} className="underline">
             {LEGAL_ENTITY.contactEmail}
           </a>
           .
         </p>
-        <p className="mt-3 text-sm text-[var(--muted)]">
-          Última actualización: {LEGAL_ENTITY.lastUpdatedEs}.
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Última actualización: {LEGAL_ENTITY.lastUpdatedEs}.{" "}
+          <Link href="/preguntas" className="underline underline-offset-2">
+            Preguntas frecuentes (compradores)
+          </Link>
         </p>
 
         <section className="mt-10 grid gap-4 sm:grid-cols-2">
+          <Link
+            href="/preguntas"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] p-5 hover:bg-[var(--muted-bg)] sm:col-span-2"
+          >
+            <h2 className="font-display text-lg">Preguntas frecuentes (compradores)</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Pagos Creem vs checkout de tus clientes, créditos, topes, reembolsos, Cloudflare IA, cancelación.
+            </p>
+          </Link>
           <Link
             href="/privacidad"
             className="rounded-[var(--radius-sm)] border border-[var(--border)] p-5 hover:bg-[var(--muted-bg)]"
@@ -68,6 +86,24 @@ export default function LegalPage() {
             <h2 className="font-display text-lg">DMCA / copyright</h2>
             <p className="mt-2 text-sm text-[var(--muted)]">Avisos de retiro y contranotificación.</p>
           </Link>
+          <Link
+            href="/legal/disponibilidad"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] p-5 hover:bg-[var(--muted-bg)]"
+          >
+            <h2 className="font-display text-lg">Disponibilidad</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Best effort; infra principal Cloudflare. SLA solo enterprise.
+            </p>
+          </Link>
+          <Link
+            href="/legal/dpa"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] p-5 hover:bg-[var(--muted-bg)]"
+          >
+            <h2 className="font-display text-lg">DPA (tratamiento B2B)</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Anexo procesador/responsable; versión firmada bajo solicitud.
+            </p>
+          </Link>
         </section>
 
         <section id="seguridad" className="mt-14">
@@ -89,7 +125,16 @@ export default function LegalPage() {
               Chat web: el cliente es responsable de avisos de privacidad y consentimiento ante sus visitantes.
             </li>
             <li>
-              DPA (anexo de tratamiento B2B) disponible para enterprise en {LEGAL_ENTITY.contactEmail}.
+              <Link href="/legal/dpa" className="underline">
+                DPA
+              </Link>{" "}
+              (anexo B2B); versión firmada para enterprise en {LEGAL_ENTITY.contactEmail}.
+            </li>
+            <li>
+              <Link href="/legal/disponibilidad" className="underline">
+                Disponibilidad
+              </Link>{" "}
+              — sin SLA en planes estándar.
             </li>
           </ul>
         </section>

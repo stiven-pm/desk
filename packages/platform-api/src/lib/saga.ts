@@ -21,11 +21,8 @@ export async function runProvisioningSaga(
         });
       }
       if (step === "notify") {
-        await env.DB.prepare(
-          `INSERT INTO audit_log (org_id, action, meta_json) VALUES (?, 'saga_notify', ?)`,
-        )
-          .bind(orgId, JSON.stringify({ step }))
-          .run();
+        const { sendOnboardingWelcomeEmail } = await import("./onboarding-email");
+        await sendOnboardingWelcomeEmail(env, orgId);
       }
     } catch (e) {
       await env.DB.prepare(

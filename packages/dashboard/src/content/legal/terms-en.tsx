@@ -1,4 +1,5 @@
 import { LEGAL_ENTITY } from "./entity";
+import { TRIAL_DURATION_DAYS } from "@chatbot/domain";
 
 export const termsNavEn = [
   { href: "#service", label: "Service" },
@@ -77,8 +78,10 @@ export function TermsOfServiceEn() {
         <h2>4. Plans, billing, and refunds</h2>
         <ul>
           <li>
-            The Service requires an active paid plan from signup; there is no free trial and no dashboard use
-            without a subscription.
+            When you sign up you may use the Service for a {TRIAL_DURATION_DAYS}-day trial with reduced quotas (no
+            card required). After that period, or if you activate a paid plan sooner, the active plan limits apply.
+            Without an active paid plan when the trial ends, visitor chat and operational APIs are suspended until you
+            choose a plan.
           </li>
           <li>
             Paid plans renew monthly until canceled in the billing portal or by written notice where portal access

@@ -10,6 +10,17 @@
 
 La tienda es la **marca de facturación**; los planes se crean después como **productos** dentro de esta tienda.
 
+### Datos legales en el recibo (NIT)
+
+El cliente ve razón social y NIT en el **comprobante de Creem**, no en el código de Desk. En el dashboard Creem (tienda Desk, **test** y **live**), completa el perfil del comercio:
+
+- **Rekov Systems S.A.S.**
+- **NIT 902122807-2**
+- **Colombia**
+- Sitio: `https://desk.rekov.co`
+
+Si tras un pago de prueba el recibo no muestra el NIT, revisa esa pantalla en creem.io — no hay variable `CREEM_*` en `.env` para ello.
+
 ## Dos mundos: test vs producción
 
 | | Test (desarrollo) | Producción |
@@ -82,6 +93,7 @@ Límites de uso (créditos, mensajes, bots, RAG) vienen de `packages/domain/src/
 ## Checklist rápido
 
 - [ ] Tienda Creem `desk` creada (SaaS + URL `https://desk.rekov.co`)
+- [ ] Perfil comercio: Rekov Systems S.A.S., NIT 902122807-2, Colombia (test + live)
 - [ ] 3 productos mensuales (Starter, Growth, Business) en **test** y en **live**
 - [ ] Webhook test → API test; webhook prod → API prod
 - [ ] `.env.test` / `.env.production` con API key, webhook secret, 3 product IDs, `CREEM_API_BASE_URL` correcto

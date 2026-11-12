@@ -8,6 +8,7 @@ export interface BotPublicConfig {
   model: string;
   systemPrompt: string;
   orgStatus: string;
+  trialEndsAt: string | null;
   planSlug: string;
   themeCssUrl: string | null;
   hostComponents: string[];
@@ -24,7 +25,7 @@ export async function getBotConfig(
   const bot = await env.DB.prepare(
     `SELECT b.id, b.org_id, b.name, b.model, b.system_prompt,
             b.theme_css_url, b.host_components_json,
-            o.status as org_status, o.plan_slug
+            o.status as org_status, o.plan_slug, o.trial_ends_at
      FROM bots b JOIN orgs o ON o.id = b.org_id WHERE b.id = ?`,
   )
     .bind(botId)
@@ -38,6 +39,7 @@ export async function getBotConfig(
       host_components_json: string | null;
       org_status: string;
       plan_slug: string;
+      trial_ends_at: string | null;
     }>();
   if (!bot) return null;
 
@@ -65,6 +67,7 @@ export async function getBotConfig(
     systemPrompt: bot.system_prompt,
     allowedOrigins: origins.results.map((r) => r.origin),
     orgStatus: bot.org_status,
+    trialEndsAt: bot.trial_ends_at,
     planSlug: bot.plan_slug,
     themeCssUrl: bot.theme_css_url,
     hostComponents,

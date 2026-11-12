@@ -6,7 +6,9 @@ import { PrivacyPolicyEs, privacyNavEs } from "@/content/legal/privacy-es";
 
 export const metadata: Metadata = {
   title: "Política de privacidad | Desk",
-  description: `Tratamiento de datos personales en Desk por ${LEGAL_ENTITY.legalName}.`,
+  description:
+    "Privacidad Desk: Cloudflare Workers AI, Creem, retención, cancelación, GDPR y Ley 1581 — Rekov Systems S.A.S.",
+  alternates: { canonical: "/privacidad" },
 };
 
 export default function PrivacidadPage() {

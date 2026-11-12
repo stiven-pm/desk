@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRICING_FAQ } from "@chatbot/domain";
+import { PRICING_FAQ, TRIAL_MARKETING_LINE } from "@chatbot/domain";
 import { MarketingShell } from "@/components/marketing-shell";
 import { MarketingHero } from "@/components/marketing-hero";
 import { PlanCards } from "@/components/plan-cards";
@@ -30,6 +30,7 @@ export default function LandingPage() {
         primaryLabel="Empezar ahora"
         secondaryHref="/pricing"
         secondaryLabel="Ver planes"
+        footnote={TRIAL_MARKETING_LINE}
         stats={homeHeroStats}
         aside={<ChatPreview compact />}
       />

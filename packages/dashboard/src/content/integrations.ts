@@ -130,5 +130,8 @@ export const connectorCatalog: ConnectorTemplate[] = [
   },
 ];
 
+export const integrationsSetupNote =
+  "En todos los planes incluimos setup inicial contigo: dejamos operativa la primera conexión a tus sistemas (API, MCP, conector o flujo acordado). El resto de límites (tools, MCP, conectores) depende del plan.";
+
 export const opsAssistNote =
-  "La mayoría de conexiones las haces tú en el panel. Si tu stack es muy particular, escribe a soporte para una implementación a medida.";
+  "Stack muy particular o varias integraciones a la vez: contact@rekov.co — seguimos contigo después del setup inicial.";

@@ -6,7 +6,9 @@ import { TermsOfServiceEs, termsNavEs } from "@/content/legal/terms-es";
 
 export const metadata: Metadata = {
   title: "Términos de servicio | Desk",
-  description: `Condiciones de uso de Desk operado por ${LEGAL_ENTITY.legalName}.`,
+  description:
+    "Términos Desk: planes, sin reembolsos salvo ley, cancelación, arbitraje Colombia, integraciones y responsabilidad — Rekov Systems S.A.S.",
+  alternates: { canonical: "/terminos" },
 };
 
 export default function TerminosPage() {

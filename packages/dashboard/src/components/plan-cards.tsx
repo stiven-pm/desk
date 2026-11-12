@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PLAN_MARKETING, type PlanSlug } from "@chatbot/domain";
+import { PLAN_MARKETING, type PaidPlanSlug } from "@chatbot/domain";
 
 export function PlanCards({
   cta = "register",
@@ -8,7 +8,7 @@ export function PlanCards({
 }: {
   cta?: "register" | "dashboard";
   compact?: boolean;
-  onSelectPlan?: (plan: PlanSlug) => void;
+  onSelectPlan?: (plan: PaidPlanSlug) => void;
 }) {
   return (
     <div className={`grid gap-3 ${compact ? "sm:grid-cols-3" : "gap-4 lg:grid-cols-3"}`}>
@@ -79,7 +79,7 @@ export function PlanCards({
             {onSelectPlan ? (
               <button
                 type="button"
-                onClick={() => onSelectPlan(plan.slug)}
+                onClick={() => onSelectPlan(plan.slug as PaidPlanSlug)}
                 className={`w-full rounded-[var(--radius-sm)] text-sm font-medium ${
                   compact ? "mt-4 py-2" : "mt-6 py-2.5"
                 } ${

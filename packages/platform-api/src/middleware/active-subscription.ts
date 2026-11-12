@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "../types";
 import { requireUser } from "../lib/auth";
 import { apiError } from "../lib/http";
+import { expireOrgTrialIfNeeded, orgAllowsService, loadOrgAccess } from "../lib/org-trial";
 
 const EXEMPT_PATHS = new Set([
   "/v1/admin/me",
@@ -16,7 +17,7 @@ function isAuthPath(path: string): boolean {
   return path.startsWith("/v1/admin/auth/");
 }
 
-/** Blocks panel APIs until org has paid (status active). */
+/** Blocks panel APIs until org is paid or on active trial. */
 export const activeSubscriptionMiddleware: MiddlewareHandler<AppEnv> = async (
   c,
   next,
@@ -34,11 +35,10 @@ export const activeSubscriptionMiddleware: MiddlewareHandler<AppEnv> = async (
   const auth = await requireUser(c.req.raw, c.env);
   if ("response" in auth) return auth.response;
 
-  const org = await c.env.DB.prepare(`SELECT status FROM orgs WHERE id = ?`)
-    .bind(auth.user.orgId)
-    .first<{ status: string }>();
+  await expireOrgTrialIfNeeded(c.env, auth.user.orgId!);
+  const org = await loadOrgAccess(c.env, auth.user.orgId!);
 
-  if (!org || org.status !== "active") {
+  if (!orgAllowsService(org)) {
     return apiError("subscription_required", 402);
   }
 

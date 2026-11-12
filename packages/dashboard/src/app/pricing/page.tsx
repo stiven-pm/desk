@@ -4,6 +4,7 @@ import {
   PRICING_FAQ,
   PRICING_PRODUCT_LINE,
   TEAM_SEATS_LINE,
+  TRIAL_MARKETING_LINE,
 } from "@chatbot/domain";
 import { MarketingShell } from "@/components/marketing-shell";
 import { MarketingHero } from "@/components/marketing-hero";
@@ -21,9 +22,10 @@ export default function PricingPage() {
         title="Invierte en atención, no en otra licencia por agente."
         description="Tres planes según cuántos clientes atiendes y cuántas personas operan contigo. Mismo producto; distinto techo mensual."
         primaryHref="/register"
-        primaryLabel="Elegir plan y empezar"
+        primaryLabel="Empezar gratis"
         secondaryHref="/plataforma"
         secondaryLabel="Por qué Desk"
+        footnote={TRIAL_MARKETING_LINE}
       />
 
       <div className="mx-auto max-w-5xl px-6 py-14">
@@ -57,6 +59,12 @@ export default function PricingPage() {
 
         <section className="mt-16">
           <h2 className="font-display text-xl">Preguntas frecuentes</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            Pagos, créditos, topes, reembolsos, IA y cancelación:{" "}
+            <Link href="/preguntas" className="underline underline-offset-2">
+              /preguntas
+            </Link>
+          </p>
           <div className="mt-6">
             <FaqAccordion items={PRICING_FAQ} />
           </div>

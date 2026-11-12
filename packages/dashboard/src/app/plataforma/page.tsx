@@ -17,6 +17,7 @@ import {
   MARKETING_TAGLINE,
   plataformaHeroStats,
 } from "@/content/marketing";
+import { TRIAL_MARKETING_LINE } from "@chatbot/domain";
 
 export default function PlataformaPage() {
   return (
@@ -29,6 +30,7 @@ export default function PlataformaPage() {
         primaryLabel="Quiero esto en mi negocio"
         secondaryHref="/pricing"
         secondaryLabel="Planes y precios"
+        footnote={TRIAL_MARKETING_LINE}
         stats={plataformaHeroStats}
       />
 

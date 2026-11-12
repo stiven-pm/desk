@@ -51,7 +51,7 @@ export const howDeskWorksSteps = [
   {
     step: "02",
     title: "Catálogo y pedidos en el mismo chat",
-    body: "Productos en Desk, carrito, enlace de pago y — si conectas integraciones — consultas a tu tienda o ERP.",
+    body: "Productos en Desk, carrito, enlace de pago y consultas a tu tienda o ERP — con setup inicial de integración incluido en tu plan.",
   },
   {
     step: "03",
